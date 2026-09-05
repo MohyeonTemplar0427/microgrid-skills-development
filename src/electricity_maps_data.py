@@ -2,7 +2,7 @@ import requests
 import os
 import pandas as pd
 from dotenv import load_dotenv
-from timeseries_validation import merge_complete_time_series
+from .timeseries_validation import merge_complete_time_series
 
 load_dotenv()
 

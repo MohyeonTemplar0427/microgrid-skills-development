@@ -1,4 +1,4 @@
-from battery import Battery
+from .battery import Battery
 from dataclasses import dataclass
 
 battery = Battery(

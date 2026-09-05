@@ -383,10 +383,17 @@ def run_carbon_optimization(
 def run_cost_optimization(
         data: pd.DataFrame,
         battery_parameters: dict[str, float],
-)->pd.DataFrame:
+        *,
+        degradation_cost_per_kWh: float = 0.0,
+) -> pd.DataFrame:
 
     number_of_steps = len(data)
     timestep_hours = 0.25
+
+    if degradation_cost_per_kWh < 0:
+        raise ValueError(
+            "Degradation cost must not be negative."
+        )
 
     initial_soc_kWh = battery_parameters["initial_soc_kWh"]
     min_soc_kWh = battery_parameters["min_soc_kWh"]
@@ -469,10 +476,19 @@ def run_cost_optimization(
         )
     ) * timestep_hours
 
+    battery_throughput_kWh = (
+        cp.sum(battery_charge_kw)
+        + cp.sum(battery_discharge_kw)
+    ) * timestep_hours
 
+    battery_degradation_cost = (
+        degradation_cost_per_kWh
+        * battery_throughput_kWh
+    )
 
     objective = cp.Minimize(
         grid_import_cost
+        + battery_degradation_cost
     )
 
     problem = cp.Problem(

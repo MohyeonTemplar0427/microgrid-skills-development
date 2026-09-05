@@ -1,5 +1,5 @@
 import pandas as pd
-import single_day_analysis as sda
+from . import single_day_analysis as sda
 
 
 def apply_daily_variation(

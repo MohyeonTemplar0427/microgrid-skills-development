@@ -86,6 +86,33 @@ Run the suite with:
 - Save the interval and comparison reports as reproducible artifacts.
 - Complete the Week 4 validation report and Gate C review.
 
+## Optional Future Development
+
+A future high-fidelity extension should represent the physical
+behavior of every major grid component using equipment-specific data
+and the appropriate simulation timescale. This could include:
+
+- Battery electrothermal and aging behavior, including SOC, depth of
+  discharge, C-rate, temperature, calendar aging, and potentially
+  different charging and discharging degradation weights
+- PV and battery inverter efficiency maps, kVA limits, reactive-power
+  capability, temperature derating, and Volt-VAR or Volt-Watt control
+- Transformer magnetizing current, no-load loss, tap settings,
+  grounding, thermal loading, and tested winding impedance
+- Utility-source short-circuit strength and X/R ratio
+- Feeder conductor geometry, neutral and grounding impedance,
+  capacitance, temperature-dependent resistance, and verified ampacity
+- Voltage-dependent load composition, phase imbalance, motor behavior,
+  and measured reactive power
+- Protection, faults, harmonics, switching behavior, and fast
+  electromagnetic transients where those phenomena affect the study
+
+No single model resolves every physical timescale well. OpenDSS should
+remain the distribution and QSTS model, while SPICE or an EMT tool can
+represent converter switching and a separate electrothermal model can
+represent detailed battery aging. These extensions are optional and
+must not delay the required Week 4 scenario-validation work.
+
 ## Exact Next Step
 
 Begin Week 4 Session 2 in `src/qsts_simulation.py` by identifying the
