@@ -562,7 +562,7 @@ def test_replay_dispatch_timeseries_meets_network_limits():
         == expected_feasible.tolist()
     ) 
 
-    assert replay["feasible"].all()  
+    assert replay["feasible"].all()
 
     expected_line_loading = (
         replay["maximum_current_a"]
