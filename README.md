@@ -1,6 +1,47 @@
 # Session_Week1
 Repo for creating knowledge framework for energy engineer. 
 
+## Current curriculum status
+
+Revised Weeks 3 and 4 are complete, and Gate C has passed for the
+current model scope and two-day real-signal dataset.
+
+The validated workflow now includes:
+
+- A 12.47 kV PCC, 750 kVA service transformer, 0.48 kV feeder,
+  building load, rooftop PV, and externally dispatched battery
+- Five common-input dispatch scenarios: no battery, rule based,
+  cost optimal, carbon optimal, and combined optimal
+- 15-minute QSTS replay through the same OpenDSS model
+- Per-interval voltage, line loading, transformer loading, loss,
+  reverse-flow, violation, and feasibility results
+- A combined operational and electrical validation report
+- A machine-readable OpenDSS completion checklist
+
+All 960 Week 4 interval solutions converged and were feasible. The
+complete automated suite passed with 66 tests.
+
+Run the final Week 4 validation workflow:
+
+```bash
+/usr/local/bin/python3 -m src.week4_validation
+```
+
+Run the complete test suite:
+
+```bash
+/usr/local/bin/python3 -m pytest -q
+```
+
+Completion evidence:
+
+- [`Week_3_Completion_Recap.md`](Week_3_Completion_Recap.md)
+- [`Week_4_Completion_Recap.md`](Week_4_Completion_Recap.md)
+- `results/week4_final_validation_report.csv`
+- `results/week4_opendss_validation_checklist.csv`
+
+The project is ready to begin revised Week 5 SQL work.
+
 
 ## Week 2: Real-data consolidation
 

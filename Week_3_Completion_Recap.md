@@ -198,3 +198,14 @@ Week 4 must replay and compare:
 Each scenario must report voltage, line loading, transformer loading,
 losses, reverse power flow, constraint violations, and infeasible
 intervals in a machine-readable format.
+
+## Subsequent Status Update
+
+Week 4 Sessions 1-3 completed the work listed above. All five required
+scenarios were replayed through the same OpenDSS model, all 960
+interval solutions converged and were feasible, and the final
+machine-readable validation checklist passed every requirement.
+
+Gate C is now complete for the current model scope and dataset. See
+`Week_4_Completion_Recap.md` and
+`results/week4_opendss_validation_checklist.csv` for the final evidence.

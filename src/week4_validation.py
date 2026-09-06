@@ -2,6 +2,8 @@
 
 import pandas as pd
 
+from .battery import Battery
+from .config import to_optimizer_parameters
 from pathlib import Path
 
 from .qsts_simulation import(
@@ -482,3 +484,87 @@ def save_week4_validation_artifacts(
     )
 
     return report_path, checklist_path
+
+
+def main() -> None:
+    """Build, check, and save the final Week 4 report."""
+
+    project_root = (
+        Path(__file__).resolve().parents[1]
+    )
+
+    results_directory = (
+        project_root / "results"
+    )
+
+    battery = Battery(
+        capacity_kWh=20.0,
+        SOC_min=0.1,
+        SOC_max=0.9,
+        energy_kWh=10.0,
+        charge_efficiency=0.95,
+        discharge_efficiency=0.95,
+        max_charge_kw=5.0,
+        max_discharge_kw=5.0,
+    )
+
+    battery_parameters = (
+        to_optimizer_parameters(
+            battery
+        )
+    )
+
+    validation_report = (
+        build_week4_validation_report(
+            results_directory,
+            battery_parameters,
+            degradation_cost_per_kWh = 0.03,
+            timestep_hours = 0.25,
+        )
+    )
+
+    validation_checklist = (
+        create_opendss_validation_checklist(
+            validation_report,
+            # Supported by the Week 3 tests and recap
+            base_feeder_validated=True,
+            # Supported by the week 3 solution-mode document.
+            solution_modes_documented=True,
+        )
+    )
+
+    report_path, checklist_path = (
+        save_week4_validation_artifacts(
+            validation_report,
+            validation_checklist,
+            results_directory,
+        )
+    )
+
+    print(
+        "\n=== OpenDSS Validation Checklist ==="
+    )
+
+    print(
+        validation_checklist.to_string(
+            index=False
+        )
+    )
+
+    print(
+        "\nAll requirements passed: "
+        f"{bool(validation_checklist['passed'].all())}"
+    )
+
+    print(
+        f"Saved validation report: {report_path}"
+    )
+
+    print(
+        f"Saved validation checklist: {checklist_path}"
+    )
+
+
+if __name__ == "__main__":
+    main()
+
