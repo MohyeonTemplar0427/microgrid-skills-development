@@ -62,6 +62,16 @@ def test_create_qsts_scenario_comparison():
             "maximum_current_a": [20.0, 30.0],
             "scheduled_grid_import_kw": [10.0, -2.0],
             "feeder_real_loss_kw": [1.0, 3.0],
+            "feasible": [True, True],
+            "voltage_violation": [False, False],
+            "line_overload": [False, False],
+            "transformer_overload": [False, False],
+            "reverse_power_flow": [False, True],
+            "line_loading_percent": [20.0, 30.0],
+            "transformer_loading_percent": [40.0, 50.0],
+            "transformer_real_loss_kw": [0.2, 0.4],
+            "pcc_grid_import_kw": [10.0, 0.0],
+            "pcc_grid_export_kw": [0.0, 2.0],
         }
     )
 
@@ -73,6 +83,16 @@ def test_create_qsts_scenario_comparison():
             "maximum_current_a": [25.0, 35.0],
             "scheduled_grid_import_kw": [12.0, -4.0],
             "feeder_real_loss_kw": [2.0, 4.0],
+            "feasible": [True, False],
+            "voltage_violation": [False, True],
+            "line_overload": [False, False],
+            "transformer_overload": [False, False],
+            "reverse_power_flow": [False, True],
+            "line_loading_percent": [25.0, 35.0],
+            "transformer_loading_percent": [45.0, 55.0],
+            "transformer_real_loss_kw": [0.3, 0.5],
+            "pcc_grid_import_kw": [12.0, 0.0],
+            "pcc_grid_export_kw": [0.0, 4.0],
         }
     )
 
@@ -131,3 +151,47 @@ def test_create_qsts_scenario_comparison():
         "no_battery",
         "feeder_loss_energy_kWh",
     ] == pytest.approx(1.5)
+
+    assert comparison.loc[
+        "optimized",
+        "feasible_intervals",
+    ] == 2
+
+    assert comparison.loc[
+        "no_battery",
+        "feasible_intervals",
+    ] == 1
+
+    assert comparison.loc[
+        "no_battery",
+        "voltage_violation_intervals",
+    ] == 1
+
+    assert comparison.loc[
+        "optimized",
+        "reverse_power_flow_intervals",
+    ] == 1
+    assert comparison.loc[
+        "optimized",
+        "maximum_line_loading_percent",
+    ] == pytest.approx(30.0)
+
+    assert comparison.loc[
+        "optimized",
+        "maximum_transformer_loading_percent",
+    ] == pytest.approx(50.0)
+
+    assert comparison.loc[
+        "optimized",
+        "grid_import_energy_kWh",
+    ] == pytest.approx(2.5)
+
+    assert comparison.loc[
+        "optimized",
+        "grid_export_energy_kWh",
+    ] == pytest.approx(0.5)
+
+    assert comparison.loc[
+        "optimized",
+        "transformer_loss_energy_kWh",
+    ] == pytest.approx(0.15) 

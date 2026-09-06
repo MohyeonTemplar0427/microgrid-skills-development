@@ -53,6 +53,8 @@ def create_no_battery_replay_schedule(
         )    
     return no_battery_data
 
+
+
 def create_qsts_scenario_comparison(
         scenario_results: dict[str, pd.DataFrame],
         *,
@@ -77,6 +79,16 @@ def create_qsts_scenario_comparison(
         "maximum_current_a",
         "scheduled_grid_import_kw",
         "feeder_real_loss_kw",
+        "feasible",
+        "voltage_violation",
+        "line_overload",
+        "transformer_overload",
+        "reverse_power_flow",
+        "line_loading_percent",
+        "transformer_loading_percent",
+        "transformer_real_loss_kw",
+        "pcc_grid_import_kw",
+        "pcc_grid_export_kw",
     }
 
     comparison_records = []
@@ -121,6 +133,39 @@ def create_qsts_scenario_comparison(
                 ),
                 "feeder_loss_energy_kWh": (
                     results["feeder_real_loss_kw"].sum()
+                    * timestep_hours
+                ),
+                "feasible_intervals": int(
+                    results["feasible"].sum()
+                ),
+                "voltage_violation_intervals": int(
+                    results["voltage_violation"].sum()
+                ),
+                "line_overload_intervals": int(
+                    results["line_overload"].sum()
+                ),
+                "transformer_overload_intervals": int(
+                    results["transformer_overload"].sum()
+                ),
+                "reverse_power_flow_intervals": int(
+                    results["reverse_power_flow"].sum()
+                ),
+                "maximum_line_loading_percent": (
+                    results["line_loading_percent"].max()
+                ),
+                "maximum_transformer_loading_percent": (
+                    results["transformer_loading_percent"].max()
+                ),
+                "grid_import_energy_kWh": (
+                    results["pcc_grid_import_kw"].sum()
+                    * timestep_hours
+                ),
+                "grid_export_energy_kWh": (
+                    results["pcc_grid_export_kw"].sum()
+                    * timestep_hours
+                ),
+                "transformer_loss_energy_kWh": (
+                    results["transformer_real_loss_kw"].sum()
                     * timestep_hours
                 ),
             }

@@ -12,189 +12,194 @@ from .qsts_analysis import (
     create_qsts_scenario_comparison,
 )
 
+from .dispatch_scenarios import(
+    SCENARIO_OUTPUT_FILENAMES,
+)
 
-def main() -> None:
-    """Load, replay, summarize, and save the dispatch schedule."""
+def load_required_dispatch_scenarios(
+        input_directory: Path,
+) -> dict[str, pd.DataFrame]:
 
-    project_root = Path(__file__).resolve().parents[1]
+    """Load the five Week 4 OpenDSS dispatch schedules."""
+    schedules = {}
 
-    dispatch_path = (
-        project_root
-        / "results"
-        /
-        "week2_opendss_handoff_combined_real_15min.csv"
-    )
+    for scenario_name, filename in (
+        SCENARIO_OUTPUT_FILENAMES.items()
+    ):
+        input_path = input_directory / filename
 
-    output_path = (
-        project_root
-        / "results"
-        /
-        "week3_qsts_simulation_results.csv"
-    )
+        if not input_path.is_file():
+            raise FileNotFoundError(
+                "Dispatch scenario file was not found: "
+                f"{input_path}"
+            )
 
-    no_battery_output_path = (
-        project_root
-        / "results"
-        / "week3_qsts_no_battery_results.csv"
-    )
+        schedules[scenario_name] = pd.read_csv(
+            input_path,
+            parse_dates=["timestamp"],
+        )
 
-    comparison_output_path = (
-        project_root
-        / "results"
-        / "week3_qsts_scenario_comparison.csv"
-    )
+    return schedules
 
-    dispatch_data = pd.read_csv(
-        dispatch_path,
-        parse_dates=["timestamp"],
-    )
+def replay_required_dispatch_scenarios(
+        dispatch_scenarios: dict[str, pd.DataFrame],
+) -> dict[str, pd.DataFrame]:
+    """Replay each Week 4 dispatch scenario through OpenDSS."""
 
-    replay_results = replay_dispatch_timeseries(
-        dispatch_data
-    )
+    if not dispatch_scenarios:
+        raise ValueError(
+            "At least one dispatch scenario is required."
+        )
 
-    no_battery_dispatch = (
-        create_no_battery_replay_schedule(
-            dispatch_data
+    replay_results = {}
+
+    for scenario_name, dispatch_data in (
+        dispatch_scenarios.items()
+    ):
+        replay_results[scenario_name] = (
+            replay_dispatch_timeseries(
+                dispatch_data
+            )
+        )
+    return replay_results
+
+def run_required_qsts_analysis(
+        input_directory: Path,
+) -> tuple[
+    dict[str, pd.DataFrame],
+    pd.DataFrame,
+]:
+    """Load, replay, and compare the five Week 4 scenarios."""
+
+    dispatch_scenarios = (
+        load_required_dispatch_scenarios(
+            input_directory
         )
     )
 
-    no_battery_results = (
-        replay_dispatch_timeseries(
-            no_battery_dispatch
+    replay_results = (
+        replay_required_dispatch_scenarios(
+            dispatch_scenarios
         )
     )
 
-    scenario_comparison = (
+    scenario_comparision = (
         create_qsts_scenario_comparison(
-            {
-                "optimized": replay_results,
-                "no_battery": no_battery_results,
-            },
+            replay_results,
             timestep_hours=0.25
         )
     )
 
-    timestep_hours = 0.25
+    return replay_results, scenario_comparision
 
-    optimized_loss_kWh = (
-        replay_results["feeder_real_loss_kw"].sum()
-        * timestep_hours
+def save_required_qsts_results(
+        replay_results: dict[str, pd.DataFrame],
+        scenario_comparison: pd.DataFrame,
+        output_directory: Path,
+) -> tuple[dict[str, Path], Path,]:
+
+    """Save the five QSTS resulsts and their comparison."""
+
+    expected_names = set(
+        SCENARIO_OUTPUT_FILENAMES
     )
 
-    no_battery_loss_kWh = (
-        no_battery_results["feeder_real_loss_kw"].sum()
-        * timestep_hours
+    received_names = set(
+        replay_results
     )
 
-    loss_reduction_kWh = (
-        no_battery_loss_kWh
-        - optimized_loss_kWh
+    if received_names != expected_names:
+        raise ValueError(
+            "QSTS scenario names don't match: "
+            f"expected={sorted(expected_names)},"
+            f"received={sorted(received_names)}"
+        )
+
+    output_directory.mkdir(
+        parents=True,
+        exist_ok=True,
     )
 
-    loss_reduction_percentage = (
-        loss_reduction_kWh
-        / no_battery_loss_kWh
-        * 100
-        if no_battery_loss_kWh != 0
-        else 0.0
-    )
+    saved_result_paths = {}
 
-    replay_results.to_csv(
-        output_path,
-        index=False,
-    )
+    for scenario_name, results in (
+        replay_results.items()
+    ):
+        output_path = (
+            output_directory
+            / f"week4_qsts_{scenario_name}_15min.csv"
+        )
 
-    no_battery_results.to_csv(
-        no_battery_output_path,
-        index=False,
+        results.to_csv(
+            output_path,
+            index=False,
+        )
+
+        saved_result_paths[scenario_name] = (
+            output_path
+        )
+
+    comparison_path = (
+        output_directory
+        / "week4_qsts_scenario_comparison.csv"
     )
 
     scenario_comparison.to_csv(
-        comparison_output_path,
+        comparison_path,
         index=False,
     )
 
-    print(
-        f"Replayed intervals: {len(replay_results)}"
-    )
-    print(
-        "Converged intervals: "
-        f"{int(replay_results['converged'].sum())}"
-    )
-    print(
-        "Minimum voltage (pu): "
-        f"{replay_results['minimum_voltage_pu'].min():.6f}"
-    )
-    print(
-        "Maximum voltage (pu): "
-        f"{replay_results['maximum_voltage_pu'].max():.6f}"
-    )
-    print(
-        "Maximum feeder current (A): "
-        f"{replay_results['maximum_current_a'].max():.6f}"
-    )
-    print(
-        "Maximum grid-import error (kW): "
-        f"{replay_results['grid_import_error_kw'].abs().max():.9f}"
+    return saved_result_paths, comparison_path
+
+# main -----------------------------------------------------------------
+# CHANGED: Main now runs all five Week 4 scenarios.
+def main() -> None:
+    """Run and save the complete Week 4 QSTS analysis."""
+
+    project_root = (
+        Path(__file__).resolve().parents[1]
     )
 
-    print(f"Saved results: {output_path}")
-
-
-
-    print("\n=== QSTS Scenario Comparison ===")
-
-    print(
-        "Optimized minimum voltage (pu): "
-        f"{replay_results['minimum_voltage_pu'].min():.6f}"
-    )
-    print(
-        "No-battery minimum voltage (pu): "
-        f"{no_battery_results['minimum_voltage_pu'].min():.6f}"
+    results_directory = (
+        project_root / "results"
     )
 
-    print(
-        "Optimized maximum current (A): "
-        f"{replay_results['maximum_current_a'].max():.6f}"
-    )
-    print(
-        "No-battery maximum current (A): "
-        f"{no_battery_results['maximum_current_a'].max():.6f}"
+    replay_results, scenario_comparison = (
+        run_required_qsts_analysis(
+            results_directory
+        )
     )
 
-    print(
-        "Optimized feeder-loss energy (kWh): "
-        f"{optimized_loss_kWh:.6f}"
-    )
-    print(
-        "No-battery feeder-loss energy (kWh): "
-        f"{no_battery_loss_kWh:.6f}"
-    )
-
-    print(
-        "Feeder-loss energy reduction (kWh): "
-        f"{loss_reduction_kWh:.6f}"
-    )
-    print(
-        "Feeder-loss energy reduction (%): "
-        f"{loss_reduction_percentage:.3f}"
+    saved_result_paths, comparison_path = (
+        save_required_qsts_results(
+            replay_results,
+            scenario_comparison,
+            results_directory,
+        )
     )
 
-    print("\n=== QSTS Scenario Summary ===")
+    # Keep only the output needed to verify this workflow.
+    print(
+        "\n=== Week 4 QSTS Scenario Comparison ==="
+    )
+
     print(
         scenario_comparison.to_string(
             index=False
         )
     )
 
+    print("\n=== Saved QSTS Results ===")
+
+    for scenario_name, output_path in (
+        saved_result_paths.items()
+    ):
+        print(
+            f"{scenario_name}: {output_path}"
+        )
+
     print(
-        f"Saved no-battery results: "
-        f"{no_battery_output_path}"
-    )
-    print(
-        f"Saved scenario comparison: "
-        f"{comparison_output_path}"
+        f"comparison: {comparison_path}"
     )
 
 if __name__ == "__main__":
