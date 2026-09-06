@@ -1,0 +1,11 @@
+requirement,passed,evidence
+Base feeder validated,True,Week 3 base-feeder test and recap
+All required scenarios replayed,True,"5 scenarios, 960 intervals"
+All interval solutions converged,True,960 of 960 converged
+Voltage results reported,True,Minimum and maximum voltage columns
+Line and transformer loading reported,True,Maximum equipment-loading columns
+Electrical losses reported,True,Feeder and transformer loss energy
+Reverse power flow reported,True,8 reverse-flow intervals identified
+Infeasible intervals identified,True,0 infeasible intervals identified
+Machine-readable feasibility produced,True,Feasibility and violation-count fields
+OpenDSS solution modes documented,True,Week 3 solution-mode document
