@@ -24,3 +24,49 @@ INNER JOIN signal_sources as ss
     ON rss.signal_source_id = ss.signal_source_id
 
 ORDER BY sr.simulation_run_id;
+
+SHOW CREATE TABLE simulation_run_signal_sources;
+
+-- Query 3: Inspect all signals recorded for one interval.
+SELECT
+    measured_at_utc,
+    measurement_name,
+    measurement_value,
+    unit
+FROM measurements
+WHERE measured_at_utc = '2026-08-25 07:00:00.000000'
+ORDER BY measurement_name;
+
+-- Query 4: Validate the number of foundational records in each table.
+SELECT
+    'sites' AS table_name,
+    COUNT(*) AS row_count
+FROM sites
+
+UNION ALL
+
+SELECT
+    'simulation_runs' AS table_name,
+    COUNT(*) AS row_count
+FROM simulation_runs
+
+UNION ALL
+
+SELECT
+    'signal_sources' AS table_name,
+    COUNT(*) AS row_count
+FROM signal_sources
+
+UNION ALL
+
+SELECT
+    'simulation_run_signal_sources' AS table_name,
+    COUNT(*) AS row_count
+FROM simulation_run_signal_sources
+
+UNION ALL
+
+SELECT
+    'measurements' AS table_name,
+    COUNT(*) AS row_count
+FROM measurements;
