@@ -1,6 +1,7 @@
 cvxpy==1.9.2
 gridstatus==0.36.0
 matplotlib==3.10.0
+mysql-connector-python==26.7.0
 numpy==2.2.3
 OpenDSSDirect.py==0.9.4
 pandas==2.2.3
