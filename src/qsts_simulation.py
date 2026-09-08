@@ -41,6 +41,33 @@ def load_required_dispatch_scenarios(
 
     return schedules
 
+# load the saved electrical results for all five scenarios.
+def load_required_qsts_results(
+    input_directory: Path,
+) -> dict[str, pd.DataFrame]:
+    """Load the five saved Week 4 QSTS result files."""
+
+    qsts_results = {}
+
+    for scenario_name in SCENARIO_OUTPUT_FILENAMES:
+        input_path = (
+            input_directory
+            / f"week4_qsts_{scenario_name}_15min.csv"
+        )
+
+        if not input_path.is_file():
+            raise FileNotFoundError(
+                "QSTS result file was not found: "
+                f"{input_path}"
+            )
+
+        qsts_results[scenario_name] = pd.read_csv(
+            input_path,
+            parse_dates=["timestamp"],
+        )
+
+    return qsts_results
+
 def replay_required_dispatch_scenarios(
         dispatch_scenarios: dict[str, pd.DataFrame],
 ) -> dict[str, pd.DataFrame]:
@@ -150,6 +177,7 @@ def save_required_qsts_results(
     )
 
     return saved_result_paths, comparison_path
+
 
 # main -----------------------------------------------------------------
 # CHANGED: Main now runs all five Week 4 scenarios.

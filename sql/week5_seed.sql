@@ -1,3 +1,4 @@
+-- Creates or refreshes the modeled training site.
 INSERT INTO sites (
     site_name,
     timezone_name,
@@ -12,6 +13,7 @@ ON DUPLICATE KEY UPDATE
     timezone_name = 'America/Los_Angeles',
     description = 'Three-phase microgrid model for dispatch and OpenDSS validation';
 
+-- Creates or refreshes the reproducible Week 4 analysis run.
 INSERT INTO simulation_runs (
     site_id,
     run_name,
@@ -23,7 +25,11 @@ INSERT INTO simulation_runs (
     configuration_json
 )
 VALUES (
-    1,
+    (
+        SELECT site_id
+        FROM sites
+        WHERE site_name = 'training_microgrid'
+    ),
     'week4_real_market_qsts_validation',
     '2026-08-25 07:00:00.000000',
     '2026-08-27 07:00:00.000000',
@@ -59,7 +65,7 @@ VALUES (
     'results/week4_real_market_inputs_15min.csv',
     '4db99df70bce4bcaa428fb9ead57c1e8a43a4e587bdd2bf35d75d18337b8d40b'
 )
--- NEW: update its metadata when this file fingerprint already exists.
+-- Updates its metadata when this file fingerprint already exists.
 ON DUPLICATE KEY UPDATE
     source_name = 'week4_integrated_market_inputs',
     signal_type = 'integrated_timeseries',
@@ -76,8 +82,25 @@ INSERT INTO simulation_run_signal_sources (
     source_role
 )
 VALUES (
-    1,
-    1,
+    (
+        SELECT sr.simulation_run_id
+        FROM simulation_runs AS sr
+        INNER JOIN sites AS s
+            ON sr.site_id = s.site_id
+        WHERE s.site_name = 'training_microgrid'
+          AND sr.run_name =
+              'week4_real_market_qsts_validation'
+          AND sr.analysis_start_utc =
+              '2026-08-25 07:00:00.000000'
+          AND sr.git_commit_hash =
+              'b6cd01e5b858c56c61fd6964e3b759ac6db974be'
+    ),
+    (
+        SELECT signal_source_id
+        FROM signal_sources
+        WHERE snapshot_sha256 =
+            '4db99df70bce4bcaa428fb9ead57c1e8a43a4e587bdd2bf35d75d18337b8d40b'
+    ),
     'common_interval_input'
 )
 ON DUPLICATE KEY UPDATE
@@ -93,11 +116,53 @@ INSERT INTO measurements (
     unit
 )
 VALUES
-    (1, '2026-08-25 07:00:00.000000', 'load', 15.0, 'kW'),
-    (1, '2026-08-25 07:00:00.000000', 'pv', 0.0, 'kW'),
-    (1, '2026-08-25 07:00:00.000000', 'net_load', 15.0, 'kW'),
-    (1, '2026-08-25 07:00:00.000000', 'energy_price', 0.06127028, '$/kWh'),
-    (1, '2026-08-25 07:00:00.000000', 'carbon_intensity', 345, 'gCO2/kWh')
+    (
+        (
+            SELECT signal_source_id
+            FROM signal_sources
+            WHERE snapshot_sha256 =
+                '4db99df70bce4bcaa428fb9ead57c1e8a43a4e587bdd2bf35d75d18337b8d40b'
+        ),
+        '2026-08-25 07:00:00.000000', 'load', 15.0, 'kW'
+    ),
+    (
+        (
+            SELECT signal_source_id
+            FROM signal_sources
+            WHERE snapshot_sha256 =
+                '4db99df70bce4bcaa428fb9ead57c1e8a43a4e587bdd2bf35d75d18337b8d40b'
+        ),
+        '2026-08-25 07:00:00.000000', 'pv', 0.0, 'kW'
+    ),
+    (
+        (
+            SELECT signal_source_id
+            FROM signal_sources
+            WHERE snapshot_sha256 =
+                '4db99df70bce4bcaa428fb9ead57c1e8a43a4e587bdd2bf35d75d18337b8d40b'
+        ),
+        '2026-08-25 07:00:00.000000', 'net_load', 15.0, 'kW'
+    ),
+    (
+        (
+            SELECT signal_source_id
+            FROM signal_sources
+            WHERE snapshot_sha256 =
+                '4db99df70bce4bcaa428fb9ead57c1e8a43a4e587bdd2bf35d75d18337b8d40b'
+        ),
+        '2026-08-25 07:00:00.000000',
+        'energy_price', 0.06127028, '$/kWh'
+    ),
+    (
+        (
+            SELECT signal_source_id
+            FROM signal_sources
+            WHERE snapshot_sha256 =
+                '4db99df70bce4bcaa428fb9ead57c1e8a43a4e587bdd2bf35d75d18337b8d40b'
+        ),
+        '2026-08-25 07:00:00.000000',
+        'carbon_intensity', 345, 'gCO2/kWh'
+    )
 AS new
 ON DUPLICATE KEY UPDATE
     measurement_value = new.measurement_value,

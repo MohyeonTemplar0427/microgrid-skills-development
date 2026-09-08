@@ -228,7 +228,7 @@ def create_dispatch_result_rows(
 
     if simulation_run_id <= 0:
         raise ValueError(
-            "simulation id must be positive."
+            "simulation_run_id must be positive."
         )
     if not scenario_name.strip():
         raise ValueError(
@@ -268,7 +268,7 @@ def create_dispatch_result_rows(
                 "Dispatch timestamp must include timezone information."
             )
 
-        dispatch_at_utc = (
+        dispatched_at_utc = (
             timestamp.tz_convert("UTC").tz_localize(None).to_pydatetime()
         )
 
@@ -276,7 +276,7 @@ def create_dispatch_result_rows(
             (
                 simulation_run_id,
                 scenario_name,
-                dispatch_at_utc,
+                dispatched_at_utc,
 
                 Decimal(str(interval["battery_charge_kw"])),
                 Decimal(str(interval["battery_discharge_kw"])),
@@ -316,7 +316,7 @@ def upsert_dispatch_scenarios(
         # one session and tests can use a mock connection.
         connection,
         dispatch_scenarios: dict[str, pd.DataFrame],
-        sinmulation_run_id: int,
+        simulation_run_id: int,
 ) -> dict[str, int]:
     """Save multiple dispatch scenarios as one database batch."""
 
@@ -331,7 +331,7 @@ def upsert_dispatch_scenarios(
     for scenario_name, dispatch_data in (dispatch_scenarios.items()):
         scenario_rows = create_dispatch_result_rows(
             dispatch_data,
-            sinmulation_run_id,
+            simulation_run_id,
             scenario_name,
         )
 
@@ -522,3 +522,137 @@ def create_powerflow_result_rows(
         )
 
     return powerflow_rows
+
+# Insert power-flow rows while preserving existing primary keys.
+UPSERT_POWERFLOW_RESULTS_SQL = """
+INSERT INTO powerflow_results (
+    dispatch_result_id,
+    converged,
+    voltage_violation,
+    line_overload,
+    transformer_overload,
+    reverse_power_flow,
+    feasible,
+    minimum_voltage_pu,
+    maximum_voltage_pu,
+    maximum_current_a,
+    line_normal_rating_a,
+    line_loading_percent,
+    transformer_apparent_power_kva,
+    transformer_loading_percent,
+    transformer_real_loss_kw,
+    feeder_input_real_power_kw,
+    feeder_real_loss_kw,
+    pcc_grid_net_import_kw,
+    pcc_grid_import_kw,
+    pcc_grid_export_kw,
+    receiving_end_real_power_kw,
+    grid_import_error_kw
+)
+VALUES (
+    %s,
+    %s, %s, %s, %s, %s, %s,
+    %s, %s, %s,
+    %s, %s,
+    %s, %s, %s,
+    %s, %s,
+    %s, %s, %s,
+    %s, %s
+) AS new
+ON DUPLICATE KEY UPDATE
+    converged = new.converged,
+    voltage_violation = new.voltage_violation,
+    line_overload = new.line_overload,
+    transformer_overload = new.transformer_overload,
+    reverse_power_flow = new.reverse_power_flow,
+    feasible = new.feasible,
+    minimum_voltage_pu = new.minimum_voltage_pu,
+    maximum_voltage_pu = new.maximum_voltage_pu,
+    maximum_current_a = new.maximum_current_a,
+    line_normal_rating_a = new.line_normal_rating_a,
+    line_loading_percent = new.line_loading_percent,
+    transformer_apparent_power_kva =
+        new.transformer_apparent_power_kva,
+    transformer_loading_percent =
+        new.transformer_loading_percent,
+    transformer_real_loss_kw =
+        new.transformer_real_loss_kw,
+    feeder_input_real_power_kw =
+        new.feeder_input_real_power_kw,
+    feeder_real_loss_kw = new.feeder_real_loss_kw,
+    pcc_grid_net_import_kw =
+        new.pcc_grid_net_import_kw,
+    pcc_grid_import_kw = new.pcc_grid_import_kw,
+    pcc_grid_export_kw = new.pcc_grid_export_kw,
+    receiving_end_real_power_kw =
+        new.receiving_end_real_power_kw,
+    grid_import_error_kw = new.grid_import_error_kw
+"""
+
+# Save a power-flow batch as one transaction.
+def upsert_powerflow_result_rows(
+    connection,
+    powerflow_rows,
+) -> int:
+    """Insert or update normalized power-flow result rows."""
+
+    if not powerflow_rows:
+        return 0
+
+    try:
+        with connection.cursor() as cursor:
+            cursor.executemany(
+                UPSERT_POWERFLOW_RESULTS_SQL,
+                powerflow_rows,
+            )
+
+        connection.commit()
+
+    except mysql.connector.Error:
+        connection.rollback()
+        raise
+
+    return len(powerflow_rows)
+
+# Transform and save multiple QSTS scenarios atomically.
+def upsert_powerflow_scenarios(
+    connection,
+    qsts_results: dict[str, pd.DataFrame],
+    simulation_run_id: int,
+) -> dict[str, int]:
+    """Save multiple QSTS scenarios as one database batch."""
+
+    if not qsts_results:
+        raise ValueError(
+            "At least one QSTS result is required."
+        )
+
+    dispatch_id_map = get_dispatch_result_id_map(
+        connection,
+        simulation_run_id,
+    )
+
+    all_powerflow_rows = []
+    scenario_row_counts = {}
+
+    for scenario_name, qsts_data in (
+        qsts_results.items()
+    ):
+        scenario_rows = create_powerflow_result_rows(
+            qsts_data,
+            scenario_name,
+            dispatch_id_map,
+        )
+
+        all_powerflow_rows.extend(scenario_rows)
+
+        scenario_row_counts[scenario_name] = len(
+            scenario_rows
+        )
+
+    upsert_powerflow_result_rows(
+        connection,
+        all_powerflow_rows,
+    )
+
+    return scenario_row_counts

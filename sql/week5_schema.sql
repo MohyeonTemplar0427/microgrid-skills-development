@@ -1,7 +1,6 @@
 -- Stores each modeled microgrid site and its location context.
-CREATE TABLE IF NOT EXISTS sites(
-    site_id BIGINT UNSIGNED NOT NULL
-AUTO_INCREMENT,
+CREATE TABLE IF NOT EXISTS sites (
+    site_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     site_name VARCHAR(100) NOT NULL,
     timezone_name VARCHAR(64) NOT NULL,
     description VARCHAR(255) NULL,
@@ -13,7 +12,7 @@ AUTO_INCREMENT,
 
 -- Stores each reproducible analysis run, including its time window
 -- resolution, code version, and configuration.
-CREATE TABLE IF NOT EXISTS simulation_runs(
+CREATE TABLE IF NOT EXISTS simulation_runs (
     simulation_run_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     site_id BIGINT UNSIGNED NOT NULL,
     run_name VARCHAR(150) NOT NULL,
@@ -64,11 +63,9 @@ CREATE TABLE IF NOT EXISTS signal_sources (
     CONSTRAINT uq_signal_sources_snapshot_sha256
         UNIQUE (snapshot_sha256)
 );
-
-
 -- Connects each simulation run to the input datasets it used.
 -- This junction table supports a many-to-many relationship.
-CREATE TABLE IF NOT EXISTS simulation_run_signal_sources(
+CREATE TABLE IF NOT EXISTS simulation_run_signal_sources (
     simulation_run_id BIGINT UNSIGNED NOT NULL,
     signal_source_id BIGINT UNSIGNED NOT NULL,
     source_role VARCHAR(50) NOT NULL,
@@ -79,10 +76,12 @@ CREATE TABLE IF NOT EXISTS simulation_run_signal_sources(
     ),
 
     CONSTRAINT fk_run_signal_sources_run
-        FOREIGN KEY (simulation_run_id) REFERENCES simulation_runs(simulation_run_id),
+        FOREIGN KEY (simulation_run_id)
+        REFERENCES simulation_runs(simulation_run_id),
 
     CONSTRAINT fk_run_signal_sources_source
-        FOREIGN KEY (signal_source_id) REFERENCES signal_sources(signal_source_id)
+        FOREIGN KEY (signal_source_id)
+        REFERENCES signal_sources(signal_source_id)
 );
 
 -- Stores normalized timestamped signal values from
@@ -97,6 +96,12 @@ CREATE TABLE IF NOT EXISTS measurements (
 
     PRIMARY KEY (measurement_id),
 
+    INDEX idx_measurements_source_name_time (
+        signal_source_id,
+        measurement_name,
+        measured_at_utc
+    ),
+
     CONSTRAINT uq_measurements_source_time_name
         UNIQUE (
             signal_source_id,
@@ -108,8 +113,6 @@ CREATE TABLE IF NOT EXISTS measurements (
         FOREIGN KEY (signal_source_id)
         REFERENCES signal_sources(signal_source_id)
 );
-
-
 -- Stores each scenario's scheduled battery operation and
 -- grid exchange for every interval of a simulation run.
 CREATE TABLE IF NOT EXISTS dispatch_results (
@@ -152,8 +155,6 @@ CREATE TABLE IF NOT EXISTS dispatch_results (
             AND grid_export_kw >= 0
         )
 );
-
-
 -- Stores the OpenDSS electrical result produced by replaying
 -- one scheduled dispatch operating point.
 CREATE TABLE IF NOT EXISTS powerflow_results (
@@ -186,7 +187,7 @@ CREATE TABLE IF NOT EXISTS powerflow_results (
 
     receiving_end_real_power_kw DECIMAL(18, 8) NOT NULL,
     grid_import_error_kw DECIMAL(18, 8) NOT NULL,
-    
+
     created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
 
     PRIMARY KEY (powerflow_result_id),
@@ -198,23 +199,17 @@ CREATE TABLE IF NOT EXISTS powerflow_results (
     CONSTRAINT chk_powerflow_results_nonnegative_values
         CHECK (
             minimum_voltage_pu >= 0
-            and maximum_voltage_pu >= 0
-            and maximum_current_a >= 0
-            and line_normal_rating_a >= 0
-            and line_loading_percent >= 0
-            and transformer_apparent_power_kva >= 0
-            and transformer_real_loss_kw >= 0
-            and feeder_real_loss_kw >= 0
-            and pcc_grid_import_kw >= 0
-            and pcc_grid_export_kw >= 0
+            AND maximum_voltage_pu >= 0
+            AND maximum_current_a >= 0
+            AND line_normal_rating_a >= 0
+            AND line_loading_percent >= 0
+            AND transformer_apparent_power_kva >= 0
+            AND transformer_real_loss_kw >= 0
+            AND feeder_real_loss_kw >= 0
+            AND pcc_grid_import_kw >= 0
+            AND pcc_grid_export_kw >= 0
         ),
 
     CONSTRAINT chk_powerflow_results_transformer_loading
         CHECK (transformer_loading_percent >= 0)
 );
-
-SHOW CREATE TABLE powerflow_results;
-
-SELECT COUNT(*) AS powerflow_result_count
-FROM powerflow_results;
-

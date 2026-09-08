@@ -2,12 +2,15 @@
 
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
 
 import pandas as pd
 import pytest
 import mysql.connector
 from unittest.mock import MagicMock
 from src.database import (
+    create_dispatch_result_rows,
+    create_powerflow_result_rows,
     create_measurement_rows,
     upsert_measurement_rows,
     UPSERT_MEASUREMENTS_SQL,
@@ -219,3 +222,96 @@ def test_upsert_measurement_rows_skips_empty_batch():
     connection.cursor.assert_not_called()
     connection.commit.assert_not_called()
     connection.rollback.assert_not_called()
+
+
+# Verify one dispatch interval becomes one normalized row.
+def test_create_dispatch_result_rows_normalizes_one_interval():
+    dispatch_data = pd.DataFrame(
+        {
+            "timestamp": [
+                "2026-08-25T00:00:00-07:00",
+            ],
+            "battery_charge_kw": [2.0],
+            "battery_discharge_kw": [0.0],
+            "battery_net_injection_kw": [-2.0],
+            "battery_soc_kWh": [12.0],
+            "grid_import_kw": [17.0],
+            "grid_export_kw": [0.0],
+            "grid_net_import_kw": [17.0],
+        }
+    )
+
+    rows = create_dispatch_result_rows(
+        dispatch_data,
+        simulation_run_id=1,
+        scenario_name="cost_optimal",
+    )
+
+    assert rows == [
+        (
+            1,
+            "cost_optimal",
+            datetime(2026, 8, 25, 7, 0),
+            Decimal("2.0"),
+            Decimal("0.0"),
+            Decimal("-2.0"),
+            Decimal("12.0"),
+            Decimal("17.0"),
+            Decimal("0.0"),
+            Decimal("17.0"),
+        )
+    ]
+
+# Link one OpenDSS result to its dispatch database ID.
+def test_create_powerflow_result_rows_links_dispatch_id():
+    project_root = Path(__file__).resolve().parents[1]
+
+    qsts_data = pd.read_csv(
+        project_root
+        / "results"
+        / "week4_qsts_no_battery_15min.csv",
+        nrows=1,
+    )
+
+    # CHANGED: Use an independently known expected UTC value.
+    timestamp_utc = datetime(2026, 8, 25, 7, 0)
+
+    dispatch_id_map = {
+        ("no_battery", timestamp_utc): 123,
+    }
+
+    rows = create_powerflow_result_rows(
+        qsts_data,
+        "no_battery",
+        dispatch_id_map,
+    )
+
+    assert len(rows) == 1
+    assert len(rows[0]) == 22
+    assert rows[0][0] == 123
+    assert rows[0][1] is True
+    assert rows[0][7] == Decimal(
+        str(qsts_data.at[0, "minimum_voltage_pu"])
+    )
+
+
+# Reject a QSTS row without a matching dispatch result.
+def test_create_powerflow_result_rows_requires_dispatch_id():
+    project_root = Path(__file__).resolve().parents[1]
+
+    qsts_data = pd.read_csv(
+        project_root
+        / "results"
+        / "week4_qsts_no_battery_15min.csv",
+        nrows=1,
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Dispatch result ID was not found",
+    ):
+        create_powerflow_result_rows(
+            qsts_data,
+            "no_battery",
+            {},
+        )
