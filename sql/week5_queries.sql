@@ -182,4 +182,28 @@ HAVING ABS(
     )
 ) > 0.000001
 
-ORDER BY measured_at_utc
+ORDER BY measured_at_utc;
+
+
+-- Query 11 checks each dispatch scenario against the interval count
+-- recorded in its simulation-run metadata
+SELECT
+    dr.simulation_run_id,
+    dr.scenario_name,
+    COUNT(*) AS stored_interval_count,
+    sr.interval_count AS expected_interval_count,
+
+    CASE 
+        WHEN COUNT(*) = sr.interval_count THEN 'complete'  
+        ELSE 'incomplete'
+    END AS load_status
+
+FROM dispatch_results AS dr
+
+INNER JOIN simulation_runs AS sr
+    ON dr.simulation_run_id = sr.simulation_run_id
+
+WHERE dr.simulation_run_id = 1
+
+GROUP BY dr.simulation_run_id, dr.scenario_name, sr.interval_count
+ORDER BY dr.scenario_name;

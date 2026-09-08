@@ -181,6 +181,44 @@ def create_measurement_rows(
             )
     return measurement_rows
 
+# Insert dispatch rows while preserving existing primary keys.
+UPSERT_DISPATCH_RESULTS_SQL = """
+INSERT INTO dispatch_results (
+    simulation_run_id,
+    scenario_name,
+    dispatched_at_utc,
+    battery_charge_kw,
+    battery_discharge_kw,
+    battery_net_injection_kw,
+    battery_soc_kwh,
+    grid_import_kw,
+    grid_export_kw,
+    grid_net_import_kw
+)
+VALUES (
+    %s, %s, %s, %s, %s,
+    %s, %s, %s, %s, %s
+) AS new
+ON DUPLICATE KEY UPDATE
+    battery_charge_kw = new.battery_charge_kw,
+    battery_discharge_kw = new.battery_discharge_kw,
+    battery_net_injection_kw =
+        new.battery_net_injection_kw,
+    battery_soc_kwh = new.battery_soc_kwh,
+    grid_import_kw = new.grid_import_kw,
+    grid_export_kw = new.grid_export_kw,
+    grid_net_import_kw = new.grid_net_import_kw
+"""
+
+SELECT_DISPATCH_RESULT_IDS_SQL = """
+SELECT
+    dispatch_result_id,
+    scenario_name,
+    dispatched_at_utc
+FROM dispatch_results
+WHERE simulation_run_id = %s
+"""
+
 def create_dispatch_result_rows(
     dispatch_data: pd.DataFrame,
     simulation_run_id: int,
@@ -239,5 +277,248 @@ def create_dispatch_result_rows(
                 simulation_run_id,
                 scenario_name,
                 dispatch_at_utc,
+
+                Decimal(str(interval["battery_charge_kw"])),
+                Decimal(str(interval["battery_discharge_kw"])),
+                Decimal(str(interval["battery_net_injection_kw"])),
+                Decimal(str(interval["battery_soc_kWh"])),
+                Decimal(str(interval["grid_import_kw"])),
+                Decimal(str(interval["grid_export_kw"])),
+                Decimal(str(interval["grid_net_import_kw"])),
             )
         )
+
+    return dispatch_rows
+
+def upsert_dispatch_result_rows(
+        connection,
+        dispatch_rows,
+) -> int:
+    """Insert or update normalized dispatch-result rows."""
+    if not dispatch_rows:
+        return 0
+    try:
+        with connection.cursor() as cursor:
+            cursor.executemany(
+                UPSERT_DISPATCH_RESULTS_SQL,
+                dispatch_rows,
+            )
+
+        connection.commit()
+    except mysql.connector.Error:
+        connection.rollback()
+        raise
+
+    return len(dispatch_rows)
+
+def upsert_dispatch_scenarios(
+        # passed into the function so multiple scenario operations can share
+        # one session and tests can use a mock connection.
+        connection,
+        dispatch_scenarios: dict[str, pd.DataFrame],
+        sinmulation_run_id: int,
+) -> dict[str, int]:
+    """Save multiple dispatch scenarios as one database batch."""
+
+    if not dispatch_scenarios:
+        raise ValueError(
+            "At least one dispatch scenario is required."
+        )
+
+    all_dispatch_rows = []
+    scenario_row_counts = {}
+
+    for scenario_name, dispatch_data in (dispatch_scenarios.items()):
+        scenario_rows = create_dispatch_result_rows(
+            dispatch_data,
+            sinmulation_run_id,
+            scenario_name,
+        )
+
+        all_dispatch_rows.extend(scenario_rows)
+
+        scenario_row_counts[scenario_name] = len(
+            scenario_rows
+        )
+
+    upsert_dispatch_result_rows(
+        connection,
+        all_dispatch_rows,
+    )
+
+    return scenario_row_counts
+
+
+# Build a lookup from scenario and timestamp to database ID.
+def get_dispatch_result_id_map(
+        connection,
+        simulation_run_id: int,
+) -> dict[tuple[str, datetime], int]:
+    """Return the stored ID of every dispatch operating point."""
+
+    if simulation_run_id <= 0:
+        raise ValueError(
+            "simulation_run_id must be positive."
+        )
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            SELECT_DISPATCH_RESULT_IDS_SQL,
+            (simulation_run_id,),
+        )
+        stored_rows = cursor.fetchall()
+
+    dispatch_id_map = {}
+
+    for(
+        dispatch_result_id,
+        scenario_name,
+        dispatched_at_utc,
+    ) in stored_rows:
+        lookup_key = (
+            str(scenario_name),
+            dispatched_at_utc,
+        )
+
+        dispatch_id_map[lookup_key] = int(
+            dispatch_result_id
+        )
+
+    return dispatch_id_map
+
+def create_powerflow_result_rows(
+    qsts_data: pd.DataFrame,
+    scenario_name: str,
+    dispatch_id_map: dict[tuple[str, datetime], int],
+) -> list[tuple]:
+    """Convert one QSTS scenario into MySQL power-flow rows."""
+
+    if not scenario_name.strip():
+        raise ValueError(
+            "scenario_name must not be empty."
+        )
+
+    required_columns = {
+        "timestamp",
+        "converged",
+        "voltage_violation",
+        "line_overload",
+        "transformer_overload",
+        "reverse_power_flow",
+        "feasible",
+        "minimum_voltage_pu",
+        "maximum_voltage_pu",
+        "maximum_current_a",
+        "line_normal_rating_a",
+        "line_loading_percent",
+        "transformer_apparent_power_kva",
+        "transformer_loading_percent",
+        "transformer_real_loss_kw",
+        "feeder_input_real_power_kw",
+        "feeder_real_loss_kw",
+        "pcc_grid_net_import_kw",
+        "pcc_grid_import_kw",
+        "pcc_grid_export_kw",
+        "receiving_end_real_power_kw",
+        "grid_import_error_kw",
+    }
+
+    missing_columns = (
+        required_columns - set(qsts_data.columns)
+    )
+
+    if missing_columns:
+        raise ValueError(
+            f"Power-flow columns missing: {sorted(missing_columns)}"
+        )
+
+    powerflow_rows = []
+
+    for _, interval in qsts_data.iterrows():
+        timestamp = pd.Timestamp(
+            interval["timestamp"]
+        )
+
+        if timestamp.tzinfo is None:
+            raise ValueError(
+                "Power-flow timestamp must include timezone information."
+            )
+
+        result_at_utc = (
+            timestamp.tz_convert("UTC").tz_localize(None).to_pydatetime()
+        )
+
+        lookup_key = (
+            scenario_name,
+            result_at_utc,
+        )
+
+        if lookup_key not in dispatch_id_map:
+            raise ValueError(
+                "Dispatch result ID was not found for "
+                f"{scenario_name} at {result_at_utc}."
+            )
+
+        dispatch_result_id = dispatch_id_map[lookup_key]
+
+        powerflow_rows.append(
+            (
+                dispatch_result_id,
+
+                bool(interval["converged"]),
+                bool(interval["voltage_violation"]),
+                bool(interval["line_overload"]),
+                bool(interval["transformer_overload"]),
+                bool(interval["reverse_power_flow"]),
+                bool(interval["feasible"]),
+
+                Decimal(str(interval["minimum_voltage_pu"])),
+                Decimal(str(interval["maximum_voltage_pu"])),
+                Decimal(str(interval["maximum_current_a"])),
+
+                Decimal(str(interval["line_normal_rating_a"])),
+                Decimal(str(interval["line_loading_percent"])),
+
+                Decimal(
+                    str(
+                        interval[
+                            "transformer_apparent_power_kva"
+                        ]
+                    )
+                ),
+                Decimal(
+                    str(
+                        interval[
+                            "transformer_loading_percent"
+                        ]
+                    )
+                ),
+                Decimal(
+                    str(
+                        interval[
+                            "transformer_real_loss_kw"
+                        ]
+                    )
+                ),
+
+                Decimal(
+                    str(interval["feeder_input_real_power_kw"])
+                ),
+                Decimal(str(interval["feeder_real_loss_kw"])),
+
+                Decimal(str(interval["pcc_grid_net_import_kw"])),
+                Decimal(str(interval["pcc_grid_import_kw"])),
+                Decimal(str(interval["pcc_grid_export_kw"])),
+
+                Decimal(
+                    str(
+                        interval[
+                            "receiving_end_real_power_kw"
+                        ]
+                    )
+                ),
+                Decimal(str(interval["grid_import_error_kw"])),
+            )
+        )
+
+    return powerflow_rows
