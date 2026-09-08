@@ -180,3 +180,64 @@ def create_measurement_rows(
                 )
             )
     return measurement_rows
+
+def create_dispatch_result_rows(
+    dispatch_data: pd.DataFrame,
+    simulation_run_id: int,
+    scenario_name: str,
+) -> list[tuple]:
+    """Convert one dispatch scenario into MySQL result rows."""
+
+    if simulation_run_id <= 0:
+        raise ValueError(
+            "simulation id must be positive."
+        )
+    if not scenario_name.strip():
+        raise ValueError(
+            "scenario_name must not be empty."
+        )
+
+    required_columns = {
+        "timestamp",
+        "battery_charge_kw",
+        "battery_discharge_kw",
+        "battery_net_injection_kw",
+        "battery_soc_kWh",
+        "grid_import_kw",
+        "grid_export_kw",
+        "grid_net_import_kw",   
+    }
+
+    missing_columns = (
+        required_columns - set(dispatch_data.columns)
+    )
+
+    if missing_columns:
+        raise ValueError(
+            "Dispatch columns missing: "
+            f"{sorted(missing_columns)}"
+        )
+
+    dispatch_rows = []
+
+    for _, interval in dispatch_data.iterrows():
+        timestamp = pd.Timestamp(
+            interval["timestamp"]
+        )
+
+        if timestamp.tzinfo is None:
+            raise ValueError(
+                "Dispatch timestamp must include timezone information."
+            )
+
+        dispatch_at_utc = (
+            timestamp.tz_convert("UTC").tz_localize(None).to_pydatetime()
+        )
+
+        dispatch_rows.append(
+            (
+                simulation_run_id,
+                scenario_name,
+                dispatch_at_utc,
+            )
+        )

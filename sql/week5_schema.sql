@@ -108,3 +108,113 @@ CREATE TABLE IF NOT EXISTS measurements (
         FOREIGN KEY (signal_source_id)
         REFERENCES signal_sources(signal_source_id)
 );
+
+
+-- Stores each scenario's scheduled battery operation and
+-- grid exchange for every interval of a simulation run.
+CREATE TABLE IF NOT EXISTS dispatch_results (
+    dispatch_result_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    simulation_run_id BIGINT UNSIGNED NOT NULL,
+    scenario_name VARCHAR(50) NOT NULL,
+    dispatched_at_utc DATETIME(6) NOT NULL,
+
+    battery_charge_kw DECIMAL(18, 8) NOT NULL,
+    battery_discharge_kw DECIMAL(18, 8) NOT NULL,
+    battery_net_injection_kw DECIMAL(18, 8) NOT NULL,
+    battery_soc_kwh DECIMAL(18, 8) NOT NULL,
+
+    grid_import_kw DECIMAL(18, 8) NOT NULL,
+    grid_export_kw DECIMAL(18, 8) NOT NULL,
+    grid_net_import_kw DECIMAL(18, 8) NOT NULL,
+
+    created_at TIMESTAMP(6) NOT NULL
+        DEFAULT CURRENT_TIMESTAMP(6),
+
+    PRIMARY KEY (dispatch_result_id),
+
+    CONSTRAINT uq_dispatch_results_run_scenario_time
+        UNIQUE (
+            simulation_run_id,
+            scenario_name,
+            dispatched_at_utc
+        ),
+
+    CONSTRAINT fk_dispatch_results_run
+        FOREIGN KEY (simulation_run_id)
+        REFERENCES simulation_runs(simulation_run_id),
+
+    CONSTRAINT chk_dispatch_results_nonnegative_values
+        CHECK (
+            battery_charge_kw >= 0
+            AND battery_discharge_kw >= 0
+            AND battery_soc_kwh >= 0
+            AND grid_import_kw >= 0
+            AND grid_export_kw >= 0
+        )
+);
+
+
+-- Stores the OpenDSS electrical result produced by replaying
+-- one scheduled dispatch operating point.
+CREATE TABLE IF NOT EXISTS powerflow_results (
+    powerflow_result_id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    dispatch_result_id BIGINT UNSIGNED NOT NULL,
+
+    converged BOOLEAN NOT NULL,
+    voltage_violation BOOLEAN NOT NULL,
+    line_overload BOOLEAN NOT NULL,
+    transformer_overload BOOLEAN NOT NULL,
+    reverse_power_flow BOOLEAN NOT NULL,
+    feasible BOOLEAN NOT NULL,
+
+    minimum_voltage_pu DECIMAL(18, 8) NOT NULL,
+    maximum_voltage_pu DECIMAL(18, 8) NOT NULL,
+    maximum_current_a DECIMAL(18, 8) NOT NULL,
+
+    line_normal_rating_a DECIMAL(18, 8) NOT NULL,
+    line_loading_percent DECIMAL(18, 8) NOT NULL,
+
+    transformer_apparent_power_kva DECIMAL(18, 8) NOT NULL,
+    transformer_loading_percent DECIMAL(18, 8) NOT NULL,
+    transformer_real_loss_kw DECIMAL(18, 8) NOT NULL,
+    feeder_input_real_power_kw DECIMAL(18, 8) NOT NULL,
+    feeder_real_loss_kw DECIMAL(18, 8) NOT NULL,
+
+    pcc_grid_net_import_kw DECIMAL(18, 8) NOT NULL,
+    pcc_grid_import_kw DECIMAL(18, 8) NOT NULL,
+    pcc_grid_export_kw DECIMAL(18, 8) NOT NULL,
+
+    receiving_end_real_power_kw DECIMAL(18, 8) NOT NULL,
+    grid_import_error_kw DECIMAL(18, 8) NOT NULL,
+    
+    created_at TIMESTAMP(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+
+    PRIMARY KEY (powerflow_result_id),
+
+    CONSTRAINT uq_powerflow_results_dispatch UNIQUE (dispatch_result_id),
+    CONSTRAINT fk_powerflow_results_dispatch FOREIGN KEY (dispatch_result_id)
+        REFERENCES dispatch_results(dispatch_result_id),
+
+    CONSTRAINT chk_powerflow_results_nonnegative_values
+        CHECK (
+            minimum_voltage_pu >= 0
+            and maximum_voltage_pu >= 0
+            and maximum_current_a >= 0
+            and line_normal_rating_a >= 0
+            and line_loading_percent >= 0
+            and transformer_apparent_power_kva >= 0
+            and transformer_real_loss_kw >= 0
+            and feeder_real_loss_kw >= 0
+            and pcc_grid_import_kw >= 0
+            and pcc_grid_export_kw >= 0
+        ),
+
+    CONSTRAINT chk_powerflow_results_transformer_loading
+        CHECK (transformer_loading_percent >= 0)
+);
+
+SHOW CREATE TABLE powerflow_results;
+
+SELECT COUNT(*) AS powerflow_result_count
+FROM powerflow_results;
+
