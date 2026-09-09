@@ -1,14 +1,19 @@
 """Provide user-facing microgrid simulation functions."""
-
+#### Package Import #######################################################################
 import pandas as pd
 
 from ..dispatch.battery import calculate_grid_power
 from ..opendss.opendss_analysis import(
     replay_dispatch_timeseries,
 )
+from ..opendss.qsts_simulation import(
+    replay_required_dispatch_scenarios,
+)
 from.model_specifications import(
     MicrogridSpecification,
 )
+
+###############################################################################3
 
 def simulate_microgrid_snapshot(
     specification: MicrogridSpecification,
@@ -88,4 +93,23 @@ def simulate_microgrid_snapshot(
         ),
     )
 
-    
+def simulate_microgrid_scenarios(
+    specification: MicrogridSpecification,
+    dispatch_scenarios: dict[str, pd.DataFrame],
+) -> dict[str, pd.DataFrame]:
+    """Replay multiple dispatch scenarios using one microgrid design."""
+
+    if not isinstance(
+        specification,
+        MicrogridSpecification,
+    ):
+        raise TypeError(
+            "Object not matched as MicrogridSpecification."
+        )
+
+    return replay_required_dispatch_scenarios(
+        dispatch_scenarios,
+        battery=specification.battery,
+        pv_capacity_kw=specification.pv_capacity_kw,
+    )
+

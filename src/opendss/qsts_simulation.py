@@ -1,5 +1,6 @@
-"""Run the Week 3 OpenDSS Quasai Static Time Series dispatch replay."""
-## Package import
+"""Load, replay, compare, and save OpenDSS QSTS scenarios."""
+
+## Package import ##########################################################
 from pathlib import Path
 import pandas as pd
 
@@ -7,20 +8,23 @@ import pandas as pd
 from .opendss_analysis import (
     replay_dispatch_timeseries,
 )
+
+from ..dispatch.battery import Battery
+
 from .qsts_analysis import (
-    create_no_battery_replay_schedule,
     create_qsts_scenario_comparison,
 )
 
-from ..dispatch.dispatch_scenarios import(
+from ..dispatch.dispatch_scenarios import (
     SCENARIO_OUTPUT_FILENAMES,
 )
+###########################################################################
 
 def load_required_dispatch_scenarios(
         input_directory: Path,
 ) -> dict[str, pd.DataFrame]:
 
-    """Load the five Week 4 OpenDSS dispatch schedules."""
+    """Load every required OpenDSS dispatch schedule."""
     schedules = {}
 
     for scenario_name, filename in (
@@ -45,7 +49,7 @@ def load_required_dispatch_scenarios(
 def load_required_qsts_results(
     input_directory: Path,
 ) -> dict[str, pd.DataFrame]:
-    """Load the five saved Week 4 QSTS result files."""
+    """Load every required saved QSTS result file."""
 
     qsts_results = {}
 
@@ -70,8 +74,20 @@ def load_required_qsts_results(
 
 def replay_required_dispatch_scenarios(
         dispatch_scenarios: dict[str, pd.DataFrame],
+        *,
+        battery: Battery,
+        pv_capacity_kw: float,
 ) -> dict[str, pd.DataFrame]:
-    """Replay each Week 4 dispatch scenario through OpenDSS."""
+    """Replay every dispatch scenario with common equipment."""
+    if not isinstance(battery, Battery):
+        raise TypeError(
+            "battery must be a Battery object."
+        )
+
+    if pv_capacity_kw <= 0:
+        raise ValueError(
+            "PV capacity must be positive."
+        )
 
     if not dispatch_scenarios:
         raise ValueError(
@@ -85,18 +101,25 @@ def replay_required_dispatch_scenarios(
     ):
         replay_results[scenario_name] = (
             replay_dispatch_timeseries(
-                dispatch_data
+                dispatch_data,
+                battery=battery,
+                pv_capacity_kw=pv_capacity_kw,
             )
         )
+
     return replay_results
 
 def run_required_qsts_analysis(
         input_directory: Path,
+        *,
+        battery: Battery,
+        pv_capacity_kw: float,
+        timestep_hours: float = 0.25,
 ) -> tuple[
     dict[str, pd.DataFrame],
     pd.DataFrame,
 ]:
-    """Load, replay, and compare the five Week 4 scenarios."""
+    """Load, replay, and compare all required QSTS scenarios."""
 
     dispatch_scenarios = (
         load_required_dispatch_scenarios(
@@ -106,26 +129,28 @@ def run_required_qsts_analysis(
 
     replay_results = (
         replay_required_dispatch_scenarios(
-            dispatch_scenarios
+            dispatch_scenarios,
+            battery=battery,
+            pv_capacity_kw=pv_capacity_kw,
         )
     )
 
-    scenario_comparision = (
+    scenario_comparison = (
         create_qsts_scenario_comparison(
             replay_results,
-            timestep_hours=0.25
+            timestep_hours=timestep_hours,
         )
     )
 
-    return replay_results, scenario_comparision
+    return replay_results, scenario_comparison
 
 def save_required_qsts_results(
         replay_results: dict[str, pd.DataFrame],
         scenario_comparison: pd.DataFrame,
         output_directory: Path,
-) -> tuple[dict[str, Path], Path,]:
+) -> tuple[dict[str, Path], Path]:
 
-    """Save the five QSTS resulsts and their comparison."""
+    """Save the required QSTS results and their comparison."""
 
     expected_names = set(
         SCENARIO_OUTPUT_FILENAMES
@@ -177,57 +202,3 @@ def save_required_qsts_results(
     )
 
     return saved_result_paths, comparison_path
-
-
-# main -----------------------------------------------------------------
-def main() -> None:
-    """Run and save the complete Week 4 QSTS analysis."""
-
-    project_root = (
-        Path(__file__).resolve().parents[2]
-    )
-
-    results_directory = (
-        project_root / "results"
-    )
-
-    replay_results, scenario_comparison = (
-        run_required_qsts_analysis(
-            results_directory
-        )
-    )
-
-    saved_result_paths, comparison_path = (
-        save_required_qsts_results(
-            replay_results,
-            scenario_comparison,
-            results_directory,
-        )
-    )
-
-    # Keep only the output needed to verify this workflow.
-    print(
-        "\n=== Week 4 QSTS Scenario Comparison ==="
-    )
-
-    print(
-        scenario_comparison.to_string(
-            index=False
-        )
-    )
-
-    print("\n=== Saved QSTS Results ===")
-
-    for scenario_name, output_path in (
-        saved_result_paths.items()
-    ):
-        print(
-            f"{scenario_name}: {output_path}"
-        )
-
-    print(
-        f"comparison: {comparison_path}"
-    )
-
-if __name__ == "__main__":
-    main()

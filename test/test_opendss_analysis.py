@@ -3,6 +3,7 @@ import pytest
 import pandas as pd
 from pathlib import Path
 
+from src.dispatch.battery import Battery
 from src.opendss.opendss_analysis import (
     LoadingStatus,
     assess_line_loading,
@@ -17,6 +18,21 @@ from src.opendss.opendss_analysis import (
     replay_dispatch_timeseries,
     main as run_opendss_analysis
 )
+
+
+@pytest.fixture
+def replay_battery() -> Battery:
+    """Create a fresh battery for each OpenDSS replay test."""
+
+    return Battery(
+        capacity_kWh=20.0,
+        SOC_min=0.1,
+        SOC_max=0.9,
+        energy_kWh=10.0,
+        max_charge_kw=5.0,
+        max_discharge_kw=5.0,
+    )
+
 
 def test_create_base_circuit_solves_balanced_feeder():
     circuit_name, phase_voltages_pu = (
@@ -178,9 +194,14 @@ def test_calculate_pcc_metrics_reports_grid_import():
 
     assert metrics.reverse_power_flow is False
 
-def test_calculate_pcc_metrics_detects_reverse_power_flow():
+def test_calculate_pcc_metrics_detects_reverse_power_flow(
+    replay_battery: Battery,
+):
     create_base_circuit()
-    add_replay_resources()
+    add_replay_resources(
+        battery=replay_battery,
+        pv_capacity_kw=30.0,
+    )
 
     export_dispatch_row = pd.Series(
         {
@@ -353,10 +374,15 @@ def test_assess_line_loading_uses_maximum_phase():
 
     assert result.status == LoadingStatus.EMERGENCY
 
-def test_add_replay_resources_creates_pv_and_battery():
+def test_add_replay_resources_creates_pv_and_battery(
+    replay_battery: Battery,
+):
     create_base_circuit()
 
-    add_replay_resources()
+    add_replay_resources(
+        battery=replay_battery,
+        pv_capacity_kw=30.0,
+    )
 
     assert dss.PVsystems.AllNames() == [
         "rooftoppv"
@@ -389,9 +415,14 @@ def test_add_replay_resources_creates_pv_and_battery():
 
     assert dss.Solution.Converged()
 
-def test_apply_dispatch_operating_point_uses_real_dispatch_row():
+def test_apply_dispatch_operating_point_uses_real_dispatch_row(
+    replay_battery: Battery,
+):
     create_base_circuit()
-    add_replay_resources()
+    add_replay_resources(
+        battery=replay_battery,
+        pv_capacity_kw=30.0,
+    )
 
     dispatch_row = pd.Series(
         {
@@ -443,7 +474,9 @@ def test_apply_dispatch_operating_point_uses_real_dispatch_row():
         abs = 0.001,
     )
 
-def test_replay_dispatch_timeseries_meets_network_limits():
+def test_replay_dispatch_timeseries_meets_network_limits(
+    replay_battery: Battery,
+):
     project_root = Path(__file__).resolve().parents[1]
 
     dispatch_data = pd.read_csv(
@@ -455,7 +488,9 @@ def test_replay_dispatch_timeseries_meets_network_limits():
     )
 
     replay = replay_dispatch_timeseries(
-        dispatch_data
+        dispatch_data,
+        battery=replay_battery,
+        pv_capacity_kw=30.0,
     )
 
     assert len(replay) == 192
@@ -587,7 +622,9 @@ def test_replay_dispatch_timeseries_meets_network_limits():
     )
 
 
-def test_replay_dispatch_timeseries_flags_infeasible_interval():
+def test_replay_dispatch_timeseries_flags_infeasible_interval(
+    replay_battery: Battery,
+):
     overloaded_dispatch = pd.DataFrame(
         {
             "timestamp": [
@@ -605,7 +642,9 @@ def test_replay_dispatch_timeseries_flags_infeasible_interval():
     )
 
     replay = replay_dispatch_timeseries(
-        overloaded_dispatch
+        overloaded_dispatch,
+        battery=replay_battery,
+        pv_capacity_kw=30.0,
     )
 
     interval = replay.iloc[0]
