@@ -1108,7 +1108,6 @@ def main() -> None:
         )
     )
 
-    experiment_summaries = []
     signal_scenario_tables = [] 
 
     # Experiment configuration
@@ -1123,10 +1122,6 @@ def main() -> None:
         0.50,
     ]
 
-    previous_runtime = (
-        load_previous_runtime()
-    )
-
     start_time = (
         time.perf_counter()
     )
@@ -1140,8 +1135,6 @@ def main() -> None:
     )
 
     # Carbon-weight sweep
-    experiment_summaries = []
-
     for carbon_weight in carbon_weights:
 
         current_config = replace(
@@ -1231,16 +1224,6 @@ def main() -> None:
                 encoding = "utf-8"
             )
 
-            print(
-                f"\nSaved OpenDSS handoff to: "
-                f"{handoff_output_path}"
-            )
-
-            print(
-                f"Saved OpenDSS metadata to: "
-                f"{handoff_metadata_path}"
-            )
-
         signal_scenario_table = (
             create_scenario_comparison_table(
                 result.scenario_metrics
@@ -1257,20 +1240,6 @@ def main() -> None:
             signal_scenario_table
         )
 
-        summary = experiment_result_to_dict(
-            experiment_name=(
-                f"Carbon weight {carbon_weight}"
-            ),
-            carbon_weight = carbon_weight,
-            result=result,
-            number_of_days=(
-                current_config.number_of_days
-            ),
-        )
-
-        experiment_summaries.append(
-            summary
-        )
     signal_scenario_comparison = pd.concat(
         signal_scenario_tables,
         ignore_index = True,
@@ -1292,91 +1261,14 @@ def main() -> None:
         index=False,
     )
 
-    comparison_table = pd.DataFrame(
-        experiment_summaries
-    )
-
-    sensitivity_table = (
-        calculate_sensitivity_metrics(
-            comparison_table
-        )
-    )
-
-    # Results
-    print(
-        "\n=== Carbon Weight Comparison ==="
-    )
-
-    print(
-        comparison_table.round(
-            3
-        ).to_string(
-            index=False
-        )
-    )
-    print(
-        "\n=== Market Signal Scenario Comparison ==="
-    )
-
-    print(
-        signal_scenario_comparison
-        .round(3)
-        .to_string(index=False)
-    )
-
-    print(
-    f"\nSaved scenario comparison to: "
-    f"{scenario_output_path}"
-)   
-    
-
     # Runtime
     runtime = (
         time.perf_counter()
         - start_time
     )
 
-    print(
-        "\n=== Runtime ==="
-    )
-
-    if previous_runtime is not None:
-        print(
-            f"Previous runtime: "
-            f"{previous_runtime:.3f} seconds"
-        )
-
-    print(
-        f"Current runtime: "
-        f"{runtime:.3f} seconds"
-    )
-
     save_runtime(
         runtime
-    )
-
-    print(
-    "\n=== Carbon Weight Sensitivity ==="
-    )
-
-    print(
-        sensitivity_table[
-        [
-            "carbon_weight",
-            "total_operating_cost",
-            "emissions_reduction",
-            "battery_throughput_kWh",
-            "change_in_operating_cost",
-            "additional_emissions_reduction",
-            "additional_throughput_kWh",
-            "extra_throughput_per_kgCO2",
-            "marginal_cost_per_kgCO2",
-        ]
-    ]
-    .round(3)
-    .to_string(
-        index=False
-    )
     )
 
 

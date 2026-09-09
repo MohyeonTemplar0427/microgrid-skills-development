@@ -1,6 +1,5 @@
 import gridstatus
 import pandas as pd
-import time
 
 LOCAL_TIMEZONE = "America/Los_Angeles"
 
@@ -187,38 +186,3 @@ def validate_price_data(
             f"Expected timezone {expected_timezone}, "
             f"but received {timezone}."
         )
-
-##MAIN------------------------------------------------------------------------
-if __name__ == "__main__":
-
-    start_time = time.perf_counter()
-
-    test_location = "TH_NP15_GEN-APND"
-
-    raw_price_data = (
-        get_caiso_real_time_prices(
-            "2026-08-26",
-            location=test_location,
-        )
-    )
-
-    end_time = time.perf_counter()
-
-    price_data = (
-        caiso_price_to_dataframe(
-            raw_price_data
-        )
-    )
-
-    validate_price_data(
-        price_data,
-        expected_rows=96,
-    )
-
-    query_runtime = end_time - start_time
-
-    print(
-        f"CAISO query runtime: "
-        f"{query_runtime:.2f} seconds"
-    )
-    
