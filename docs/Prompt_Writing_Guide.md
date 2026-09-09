@@ -29,7 +29,7 @@ DONE WHEN: <pytest passes / specific numeric check / new artifact matches expect
 ```
 
 You don't need all five lines for a one-line fix, but for anything touching
-`src/battery.py`, `src/market_data_integration.py`, or the optimizer, the
+`src/dispatch/battery.py`, `src/signal_pipeline/market_data_integration.py`, or the optimizer, the
 middle three lines are what prevents silent physical bugs.
 
 ## Concrete before/after

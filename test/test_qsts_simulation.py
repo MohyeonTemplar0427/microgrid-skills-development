@@ -4,10 +4,10 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.dispatch_scenarios import(
+from src.dispatch.dispatch_scenarios import(
     SCENARIO_OUTPUT_FILENAMES,
 )
-from src.qsts_simulation import(
+from src.opendss.qsts_simulation import(
     save_required_qsts_results,
 )
 

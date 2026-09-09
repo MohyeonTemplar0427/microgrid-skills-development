@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from src.qsts_analysis import(
+from src.opendss.qsts_analysis import(
     create_no_battery_replay_schedule,
     create_qsts_scenario_comparison
 )
@@ -194,4 +194,4 @@ def test_create_qsts_scenario_comparison():
     assert comparison.loc[
         "optimized",
         "transformer_loss_energy_kWh",
-    ] == pytest.approx(0.15) 
+    ] == pytest.approx(0.15)

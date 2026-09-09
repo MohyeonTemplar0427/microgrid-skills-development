@@ -1,6 +1,10 @@
 import pytest
 
-from battery import Battery, calculate_grid_power, simulate_timestep
+from src.dispatch.battery import (
+    Battery,
+    calculate_grid_power,
+    simulate_timestep,
+)
 
 def test_battery_initialization():
     battery = Battery()

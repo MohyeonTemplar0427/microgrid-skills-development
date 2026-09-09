@@ -213,7 +213,7 @@ or control strategies can produce materially different operating results.
 | `sql/schema.sql` | Creates the seven relational tables, constraints, and measurement index. |
 | `sql/seed.sql` | Reproducibly registers the current site, run, source, relationship, and example measurements. |
 | `sql/engineering_queries.sql` | Contains reusable provenance, completeness, engineering, and performance queries. |
-| `src/database.py` | Implements connection, transformation, lookup, and transactional upsert functions. |
+| `src/database/connector.py` | Implements connection, transformation, lookup, and transactional upsert functions. |
 | `test/test_database.py` | Tests transformations, validation, relationships, and transaction behavior without modifying MySQL. |
 
 ## Future Development

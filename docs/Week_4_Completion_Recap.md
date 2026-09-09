@@ -183,7 +183,7 @@ traceable.
 | `save_required_dispatch_scenarios()` | Saves the five standardized dispatch files. |
 | `scenario_generation.main()` | Fetches or loads the common signals and runs the complete scenario-generation workflow. |
 
-The two metric functions live in `src/dispatch_metrics.py` because their
+The two metric functions live in `src/dispatch/dispatch_metrics.py` because their
 calculations are independent of whether the horizon is one day, several
 days, or a longer study.
 
@@ -289,9 +289,9 @@ configuration or operating dataset will be feasible.
 Run the principal workflows with:
 
 ```bash
-/usr/local/bin/python3 -m src.scenario_generation
-/usr/local/bin/python3 -m src.qsts_simulation
-/usr/local/bin/python3 -m src.validation
+/usr/local/bin/python3 -m src.dispatch.scenario_generation
+/usr/local/bin/python3 -m src.opendss.qsts_simulation
+/usr/local/bin/python3 -m src.opendss.validation
 /usr/local/bin/python3 -m pytest -q
 ```
 

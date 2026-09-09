@@ -8,7 +8,7 @@ import pandas as pd
 import pytest
 import mysql.connector
 from unittest.mock import MagicMock
-from src.database import (
+from src.database.connector import (
     create_dispatch_result_rows,
     create_powerflow_result_rows,
     create_measurement_rows,

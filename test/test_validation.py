@@ -4,10 +4,10 @@ import pandas as pd
 
 from pathlib import Path
 
-from src.dispatch_scenarios import(
+from src.dispatch.dispatch_scenarios import(
     SCENARIO_OUTPUT_FILENAMES,
 )
-from src.validation import(
+from src.opendss.validation import(
     create_validation_report,
     create_opendss_validation_checklist,
     save_validation_artifacts, 

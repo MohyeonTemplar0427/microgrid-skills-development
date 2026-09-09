@@ -3,7 +3,7 @@
 import pandas as pd
 import pytest
 
-from src.single_day_analysis import run_cost_optimization
+from src.dispatch.single_day_analysis import run_cost_optimization
 
 
 BATTERY_PARAMETERS = {

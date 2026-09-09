@@ -24,7 +24,7 @@ complete automated suite passed with 66 tests.
 Run the final Week 4 validation workflow:
 
 ```bash
-/usr/local/bin/python3 -m src.validation
+/usr/local/bin/python3 -m src.opendss.validation
 ```
 
 Run the complete test suite:
@@ -56,7 +56,7 @@ pytest -q
 Run the real-data experiment:
 
 ```bash
-python3 src/market_data_integration.py
+python3 -m src.signal_pipeline.market_data_integration
 ```
 
 Generated artifacts:

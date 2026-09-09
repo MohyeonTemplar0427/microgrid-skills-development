@@ -1,8 +1,8 @@
 import pandas as pd
 import pytest
 
-from src.results import ExperimentResult
-from src.market_data_integration import (
+from src.dispatch.results import ExperimentResult
+from src.signal_pipeline.market_data_integration import (
     calculate_normalized_kpis,
     calculate_sensitivity_metrics,
     calculate_daily_metrics,
@@ -15,7 +15,7 @@ from src.market_data_integration import (
     create_scenario_comparison_table
 )
 
-from src.electricity_maps_data import (
+from src.signal_pipeline.electricity_maps_data import (
     calculate_emissions_with_external_carbon,
 )
 

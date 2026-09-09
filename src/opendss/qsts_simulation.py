@@ -12,7 +12,7 @@ from .qsts_analysis import (
     create_qsts_scenario_comparison,
 )
 
-from .dispatch_scenarios import(
+from ..dispatch.dispatch_scenarios import(
     SCENARIO_OUTPUT_FILENAMES,
 )
 
@@ -180,12 +180,11 @@ def save_required_qsts_results(
 
 
 # main -----------------------------------------------------------------
-# CHANGED: Main now runs all five Week 4 scenarios.
 def main() -> None:
     """Run and save the complete Week 4 QSTS analysis."""
 
     project_root = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
     )
 
     results_directory = (

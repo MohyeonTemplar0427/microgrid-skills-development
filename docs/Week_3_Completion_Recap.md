@@ -145,7 +145,7 @@ Run the complete suite with:
 Run the focused base analysis with:
 
 ```bash
-/usr/local/bin/python3 -m src.opendss_analysis
+/usr/local/bin/python3 -m src.opendss.opendss_analysis
 ```
 
 ## Current Modeling Assumptions

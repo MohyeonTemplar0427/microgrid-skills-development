@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from opendss_handoff import create_opendss_handoff
+from src.opendss.opendss_handoff import create_opendss_handoff
 
 
 def test_create_opendss_handoff_uses_documented_signs():
@@ -122,4 +122,3 @@ def test_create_opendss_handoff_rejects_infinite_value():
         create_opendss_handoff(
             dispatch_data
         )
-

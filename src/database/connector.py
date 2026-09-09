@@ -9,7 +9,7 @@ import pandas as pd
 import mysql.connector
 from dotenv import load_dotenv
 
-ENV_PATH = Path(__file__).with_name(".env")
+ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
 
 MEASUREMENT_COLUMN_METADATA = {
     "load_kw": ("load", "kW"),

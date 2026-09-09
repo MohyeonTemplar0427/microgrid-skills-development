@@ -3,7 +3,7 @@ import pytest
 import pandas as pd
 from pathlib import Path
 
-from src.opendss_analysis import (
+from src.opendss.opendss_analysis import (
     LoadingStatus,
     assess_line_loading,
     assess_voltage_limits,

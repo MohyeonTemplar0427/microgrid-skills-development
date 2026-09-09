@@ -2,8 +2,8 @@
 
 import pandas as pd
 
-from src import single_day_analysis as sda
-from src.dispatch_scenarios import (
+from src.dispatch import single_day_analysis as sda
+from src.dispatch.dispatch_scenarios import (
         SCENARIO_OUTPUT_FILENAMES,
     create_optimized_dispatch_scenarios,
     create_required_dispatch_scenarios,

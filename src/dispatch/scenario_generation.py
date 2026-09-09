@@ -16,11 +16,11 @@ from .dispatch_scenarios import(
     save_required_dispatch_scenarios,
 )
 
-from.market_data_integration import(
+from ..signal_pipeline.market_data_integration import(
     prepare_experiment_data,
 )
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 RESULTS_DIRECTORY = (
     PROJECT_ROOT / "results"

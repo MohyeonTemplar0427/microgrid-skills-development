@@ -2,8 +2,8 @@
 
 import pandas as pd
 
-from .opendss_handoff import create_opendss_handoff
-from.qsts_analysis import(
+from ..opendss.opendss_handoff import create_opendss_handoff
+from ..opendss.qsts_analysis import(
     create_no_battery_replay_schedule,
 )
 

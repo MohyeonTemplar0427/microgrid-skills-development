@@ -2,19 +2,19 @@
 
 import pandas as pd
 
-from .battery import Battery
-from .config import to_optimizer_parameters
+from ..dispatch.battery import Battery
+from ..dispatch.config import to_optimizer_parameters
 from pathlib import Path
 
 from .qsts_simulation import(
     load_required_dispatch_scenarios,
 )
 
-from .dispatch_scenarios import(
+from ..dispatch.dispatch_scenarios import(
     SCENARIO_OUTPUT_FILENAMES,
 )
 
-from .dispatch_metrics import(
+from ..dispatch.dispatch_metrics import(
     calculate_battery_usage_metrics,
     calculate_dispatch_metrics
 )
@@ -490,7 +490,7 @@ def main() -> None:
     """Build, check, and save the final Week 4 report."""
 
     project_root = (
-        Path(__file__).resolve().parents[1]
+        Path(__file__).resolve().parents[2]
     )
 
     results_directory = (
