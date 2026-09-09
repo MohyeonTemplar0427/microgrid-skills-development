@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from enum import Enum 
 from collections.abc import Sequence
 import pandas as pd
+from ..dispatch.battery import Battery
 
 from .opendss_models import (
     FeederMetrics,
@@ -24,8 +25,15 @@ from .opendss_models import (
 # math.hypot(P,Q) calculates magnitude directly
 # = sqrt(P^2 + Q^2)
 
-def create_base_circuit() -> tuple[str, list[float]]:
+def create_base_circuit(
+    load_kw: float = 500.0,
+) -> tuple[str, list[float]]:
     """Create the three-phase microgrid base circuit."""
+
+    if load_kw < 0:
+        raise ValueError(
+            "Load power must not be negative."
+        )
 
     dss.Text.Command("Clear")
 
@@ -75,7 +83,7 @@ def create_base_circuit() -> tuple[str, list[float]]:
         "conn=wye "
         "model=1 "
         "kv=0.48 "
-        "kw=500 "
+        f"kw={load_kw} "
         "pf=0.95"
     )
     dss.Text.Command("Set VoltageBases=[12.47, 0.48]")
@@ -107,8 +115,45 @@ def create_base_circuit() -> tuple[str, list[float]]:
 
     return dss.Circuit.Name(), phase_voltages_pu
 
-def add_replay_resources()-> None:
+def add_replay_resources(
+        *,
+        battery: Battery,
+        pv_capacity_kw: float = 30
+)-> None:
     """Add the PV system and battery used for dispatch replay"""
+
+    if pv_capacity_kw <= 0:
+        raise ValueError(
+            "PV capacity must be positive."
+        )
+
+    if not isinstance(battery, Battery):
+        raise TypeError(
+            "battery must be a Battery object."
+        )
+    # Larger directional limit is set as the inverter rating
+    battery_power_rating_kw = max(
+        battery.max_charge_kw,
+        battery.max_discharge_kw,
+    )
+
+    battery_stored_percent = (
+        battery.energy_kWh
+        / battery.capacity_kWh
+        * 100
+    )
+
+    battery_reserve_percent = (
+        battery.SOC_min * 100.0
+    )
+
+    charge_efficiency_percent = (
+        battery.charge_efficiency * 100.0
+    )
+
+    discharge_efficiency_percent = (
+        battery.discharge_efficiency * 100.0
+    )
 
     dss.Text.Command(
         "New PVSystem.RooftopPV "
@@ -116,8 +161,8 @@ def add_replay_resources()-> None:
         "phases=3 "
         "conn=wye "
         "kv=0.48 "
-        "kVA=30 "
-        "Pmpp=30 "
+        f"kVA={pv_capacity_kw} "
+        f"Pmpp={pv_capacity_kw} "
         "irradiance=0 "
         "pf=1.0 "
         "%CutIn=0 "
@@ -130,12 +175,13 @@ def add_replay_resources()-> None:
         "phases=3 "
         "conn=wye "
         "kv=0.48 "
-        "kVA=5 "
-        "kWrated=5 "
-        "kWhrated=20 "
-        "%stored=50 "
-        "%reserve=10 "
-        "%EffCharge=95 "
+        f"kVA={battery_power_rating_kw} "
+        f"kWrated={battery_power_rating_kw} "
+        f"kWhrated={battery.capacity_kWh} "
+        f"%stored={battery_stored_percent} "
+        f"%reserve={battery_reserve_percent} "
+        f"%EffCharge={charge_efficiency_percent} "
+        f"%EffDischarge={discharge_efficiency_percent} "
         "%IdlingkW=0 "
         "DispMode=EXTERNAL "
         "state=IDLING"
@@ -145,6 +191,9 @@ def add_replay_resources()-> None:
 
 def replay_dispatch_timeseries(
         dispatch_data: pd.DataFrame,
+        *,
+        battery: Battery,
+        pv_capacity_kw: float,
 )-> pd.DataFrame:
     """Replay an optimizer dispatch schedule through OpenDSS"""
 
@@ -171,9 +220,18 @@ def replay_dispatch_timeseries(
         raise ValueError(
             "Dispatch replay data must not be empty."
         )
+    initial_load_kw = float(
+        dispatch_data.iloc[0]["load_kw"]
+    )
 
-    create_base_circuit()
-    add_replay_resources()
+    create_base_circuit(
+        load_kw=initial_load_kw,
+    )
+
+    add_replay_resources(
+        battery=battery,
+        pv_capacity_kw=pv_capacity_kw,
+    )
 
     line_found = dss.Circuit.SetActiveElement(
         "Line.Feeder"
@@ -200,7 +258,11 @@ def replay_dispatch_timeseries(
 
     for _, dispatch_row in dispatch_data.iterrows():
         apply_dispatch_operating_point(
-            dispatch_row
+            dispatch_row,
+            pv_rated_kw = pv_capacity_kw,
+            battery_capacity_kWh=(
+                battery.capacity_kWh
+            ),
         )
 
         feeder_metrics = calculate_feeder_metrics()
@@ -724,11 +786,28 @@ def assess_voltage_limits(
 def main ()-> None:
     """Run and report the base OpenDSS feeder analysis."""
 
-    circuit_name, load_phase_voltages_pu = (
-        create_base_circuit()
+    # Explicit equipment used by this demonstration.
+    base_case_battery = Battery(
+        capacity_kWh=20.0,
+        SOC_min=0.1,
+        SOC_max=0.9,
+        energy_kWh=10.0,
+        charge_efficiency=0.95,
+        discharge_efficiency=0.90,
+        max_charge_kw=5.0,
+        max_discharge_kw=5.0,
     )
-    # add battery and PV
-    add_replay_resources()
+
+    circuit_name, load_phase_voltages_pu = (
+        create_base_circuit(
+            load_kw=500.0,
+        )
+    )
+
+    add_replay_resources(
+        battery=base_case_battery,
+        pv_capacity_kw=30.0,
+    )
 
     # Select the feeder and collect its reusable
     # current, power, power-factor, and loss metrics
