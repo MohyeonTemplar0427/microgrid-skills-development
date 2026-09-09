@@ -3,6 +3,6 @@
 __pycache__/
 *.pyc
 
-# Keep weekly and session recap notes local.
-*Recap*.md
-*recap*.md
+# Keep project notes and study documents local, but track the main README.
+*.md
+!/README.md
