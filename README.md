@@ -35,8 +35,8 @@ Run the complete test suite:
 
 Completion evidence:
 
-- [`Week_3_Completion_Recap.md`](Week_3_Completion_Recap.md)
-- [`Week_4_Completion_Recap.md`](Week_4_Completion_Recap.md)
+- [`Week_3_Completion_Recap.md`](docs/Week_3_Completion_Recap.md)
+- [`Week_4_Completion_Recap.md`](docs/Week_4_Completion_Recap.md)
 - `results/week4_final_validation_report.csv`
 - `results/week4_opendss_validation_checklist.csv`
 
@@ -65,7 +65,7 @@ Generated artifacts:
 - `results/week2_opendss_handoff_combined_real_15min.csv`
 - `results/week2_opendss_handoff_combined_real_15min_metadata.json`
 
-See [`Week_2_Completion_Recap.md`](Week_2_Completion_Recap.md) for results, validation rules, units, sign conventions, limitations, and Week 3 readiness.
+See [`Week_2_Completion_Recap.md`](docs/Week_2_Completion_Recap.md) for results, validation rules, units, sign conventions, limitations, and Week 3 readiness.
 
 ## Future Development: Dynamic and Transient Analysis
 

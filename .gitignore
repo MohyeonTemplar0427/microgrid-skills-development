@@ -2,7 +2,3 @@
 .venv
 __pycache__/
 *.pyc
-
-# Keep project notes and study documents local, but track the main README.
-*.md
-!/README.md
