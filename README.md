@@ -24,7 +24,7 @@ complete automated suite passed with 66 tests.
 Run the final Week 4 validation workflow:
 
 ```bash
-/usr/local/bin/python3 -m src.week4_validation
+/usr/local/bin/python3 -m src.validation
 ```
 
 Run the complete test suite:

@@ -181,7 +181,7 @@ traceable.
 | `create_optimized_dispatch_scenarios()` | Runs the four battery-control strategies from one common dataset. |
 | `create_required_dispatch_scenarios()` | Adds the no-battery baseline and converts every schedule to the OpenDSS handoff schema. |
 | `save_required_dispatch_scenarios()` | Saves the five standardized dispatch files. |
-| `week4_scenario_generation.main()` | Fetches or loads the common signals and runs the complete scenario-generation workflow. |
+| `scenario_generation.main()` | Fetches or loads the common signals and runs the complete scenario-generation workflow. |
 
 The two metric functions live in `src/dispatch_metrics.py` because their
 calculations are independent of whether the horizon is one day, several
@@ -219,11 +219,11 @@ days, or a longer study.
 | Function | Role |
 |---|---|
 | `create_dispatch_performance_summary()` | Aligns schedules with price and carbon signals and calculates operational KPIs. |
-| `create_week4_validation_report()` | Joins operational KPIs with OpenDSS electrical outcomes by scenario. |
-| `build_week4_validation_report()` | Loads the saved inputs and builds the combined report. |
+| `create_validation_report()` | Joins operational KPIs with OpenDSS electrical outcomes by scenario. |
+| `build_validation_report()` | Loads the saved inputs and builds the combined report. |
 | `create_opendss_validation_checklist()` | Summarizes the evidence required by the curriculum completion gate. |
-| `save_week4_validation_artifacts()` | Saves the final combined report and completion checklist. |
-| `week4_validation.main()` | Runs, checks, prints, and saves the final validation workflow. |
+| `save_validation_artifacts()` | Saves the final combined report and completion checklist. |
+| `validation.main()` | Runs, checks, prints, and saves the final validation workflow. |
 
 ## Reusable Outputs
 
@@ -289,9 +289,9 @@ configuration or operating dataset will be feasible.
 Run the principal workflows with:
 
 ```bash
-/usr/local/bin/python3 -m src.week4_scenario_generation
+/usr/local/bin/python3 -m src.scenario_generation
 /usr/local/bin/python3 -m src.qsts_simulation
-/usr/local/bin/python3 -m src.week4_validation
+/usr/local/bin/python3 -m src.validation
 /usr/local/bin/python3 -m pytest -q
 ```
 

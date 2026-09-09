@@ -210,9 +210,9 @@ or control strategies can produce materially different operating results.
 
 | File | Purpose |
 |---|---|
-| `sql/week5_schema.sql` | Creates the seven relational tables, constraints, and measurement index. |
-| `sql/week5_seed.sql` | Reproducibly registers the current site, run, source, relationship, and example measurements. |
-| `sql/week5_queries.sql` | Contains reusable provenance, completeness, engineering, and performance queries. |
+| `sql/schema.sql` | Creates the seven relational tables, constraints, and measurement index. |
+| `sql/seed.sql` | Reproducibly registers the current site, run, source, relationship, and example measurements. |
+| `sql/engineering_queries.sql` | Contains reusable provenance, completeness, engineering, and performance queries. |
 | `src/database.py` | Implements connection, transformation, lookup, and transactional upsert functions. |
 | `test/test_database.py` | Tests transformations, validation, relationships, and transaction behavior without modifying MySQL. |
 

@@ -1,4 +1,4 @@
-"""Create the final Week 4 validation report."""
+"""Create the combined operational and electrical validation report."""
 
 import pandas as pd
 
@@ -146,7 +146,7 @@ def create_dispatch_performance_summary(
     return pd.DataFrame(summary_records)
 
 
-def create_week4_validation_report(
+def create_validation_report(
         dispatch_summary: pd.DataFrame,
         qsts_summary: pd.DataFrame,
 ) -> pd.DataFrame:
@@ -228,7 +228,7 @@ def create_week4_validation_report(
 # to pass Gate C and continue to Week 5. The validation_report contains
 # calculated scenario results, while the two Boolean arguments confirm
 # that the base feeder and solution-mode documentation were completed.
-def build_week4_validation_report(
+def build_validation_report(
         results_directory: Path,
         battery_parameters: dict[str, float],
         *,
@@ -282,7 +282,7 @@ def build_week4_validation_report(
         )
     )
 
-    return create_week4_validation_report(
+    return create_validation_report(
         dispatch_summary,
         qsts_summary,
     )
@@ -451,7 +451,7 @@ def create_opendss_validation_checklist(
     return pd.DataFrame(checklist_records)
 
 
-def save_week4_validation_artifacts(
+def save_validation_artifacts(
         validation_report: pd.DataFrame,
         validation_checklist: pd.DataFrame,
         output_directory: Path,
@@ -515,7 +515,7 @@ def main() -> None:
     )
 
     validation_report = (
-        build_week4_validation_report(
+        build_validation_report(
             results_directory,
             battery_parameters,
             degradation_cost_per_kWh = 0.03,
@@ -534,7 +534,7 @@ def main() -> None:
     )
 
     report_path, checklist_path = (
-        save_week4_validation_artifacts(
+        save_validation_artifacts(
             validation_report,
             validation_checklist,
             results_directory,
@@ -567,4 +567,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

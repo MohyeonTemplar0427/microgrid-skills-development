@@ -1,4 +1,4 @@
-"""Tests for the final Week 4 validation report."""
+"""Tests for the combined microgrid validation report."""
 
 import pandas as pd
 
@@ -7,14 +7,14 @@ from pathlib import Path
 from src.dispatch_scenarios import(
     SCENARIO_OUTPUT_FILENAMES,
 )
-from src.week4_validation import(
-    create_week4_validation_report,
+from src.validation import(
+    create_validation_report,
     create_opendss_validation_checklist,
-    save_week4_validation_artifacts, 
+    save_validation_artifacts, 
 )
 
 
-def test_create_week4_validation_report():
+def test_create_validation_report():
     scenario_names = list(
         SCENARIO_OUTPUT_FILENAMES
     )
@@ -66,7 +66,7 @@ def test_create_week4_validation_report():
         }
     )
 
-    report = create_week4_validation_report(
+    report = create_validation_report(
         dispatch_summary,
         qsts_summary,
     )
@@ -171,7 +171,7 @@ def test_create_opendss_validation_checklist():
 
 
 # NEW
-def test_save_week4_validation_artifacts(
+def test_save_validation_artifacts(
     tmp_path: Path,
 ):
     validation_report = pd.DataFrame(
@@ -191,7 +191,7 @@ def test_save_week4_validation_artifacts(
     )
 
     report_path, checklist_path = (
-        save_week4_validation_artifacts(
+        save_validation_artifacts(
             validation_report,
             validation_checklist,
             tmp_path,

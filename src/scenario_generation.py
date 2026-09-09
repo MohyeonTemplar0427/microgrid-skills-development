@@ -1,4 +1,4 @@
-"""Generate the real-signal dispatch schedules required for Week 4."""
+"""Generate real-signal dispatch schedules for microgrid analysis."""
 
 import os
 from pathlib import Path
