@@ -2,3 +2,7 @@
 .venv
 __pycache__/
 *.pyc
+
+# Keep weekly and session recap notes local.
+*Recap*.md
+*recap*.md
