@@ -7,7 +7,9 @@ from tkinter.scrolledtext import ScrolledText
 from ..dispatch.battery import Battery
 from .microgrid_simulator import simulate_microgrid_snapshot
 from .model_specifications import MicrogridSpecification
-from tkinter.scrolledtext import ScrolledText
+from .time_series_graphical_interface import (
+    create_time_series_window,
+)
 
 
 def create_application_window() -> tk.Tk:
@@ -19,7 +21,7 @@ def create_application_window() -> tk.Tk:
 
     heading = ttk.Label(
         window,
-        text="Microgrid Snapshot Simulator",
+        text="Manual Operating-Point Test",
         font=("Arial", 20, "bold"),
     )
     heading.pack(
@@ -29,8 +31,9 @@ def create_application_window() -> tk.Tk:
     description = ttk.Label(
         window,
         text=(
-            "Configure the battery, PV system, and load to run an OpenDSS snapshot."
-        )
+            "Test one electrical operating point. Battery dispatch "
+            "is idle unless an advanced manual command is provided."
+        ),
     )
 
     description.pack(
@@ -95,13 +98,51 @@ def create_application_window() -> tk.Tk:
             row=6,
             default_value="10",
         ),
-        "battery_net_injection_kw": _add_labeled_entry(
-            form_frame,
-            label_text="Battery power (+ discharge, - charge)",
-            row=7,
-            default_value="0",
-        ),
     }
+
+    advanced_frame = ttk.LabelFrame(
+        window,
+        text="Advanced Snapshot Controls",
+        padding=15,
+    )
+
+    input_entries["battery_net_injection_kw"] = (
+        _add_labeled_entry(
+            advanced_frame,
+            label_text=(
+                "Manual battery command "
+                "(+ discharge, - charge)"
+            ),
+            row=0,
+            default_value="0",
+        )
+    )
+
+    show_advanced = tk.BooleanVar(value=False)
+
+    def toggle_advanced_controls() -> None:
+        """Show or hide manual snapshot controls."""
+
+        if show_advanced.get():
+            advanced_frame.pack(
+                fill="x",
+                padx=30,
+                pady=10,
+                after=form_frame,
+            )
+        else:
+            advanced_frame.pack_forget()
+
+    advanced_checkbox = ttk.Checkbutton(
+        window,
+        text="Show advanced snapshot controls",
+        variable=show_advanced,
+        command=toggle_advanced_controls,
+    )
+    advanced_checkbox.pack(
+        pady=5,
+        after=form_frame,
+    )
 
     result_frame = ttk.LabelFrame(
         window,
@@ -152,6 +193,11 @@ def create_application_window() -> tk.Tk:
             ),
         )
 
+    def open_time_series_analysis() -> None:
+        """Open the time-series analysis window."""
+
+        create_time_series_window(window)
+
     button_frame = ttk.Frame(window)
     button_frame.pack(
         pady=10,
@@ -177,6 +223,16 @@ def create_application_window() -> tk.Tk:
         padx=5,
     )
 
+    time_series_button = ttk.Button(
+        button_frame,
+        text="Time-Series Analysis",
+        command=open_time_series_analysis,
+    )
+    time_series_button.pack(
+        side="left",
+        padx=5,
+    )
+
     result_frame.pack(
         fill="x",
         padx=30,
@@ -184,6 +240,7 @@ def create_application_window() -> tk.Tk:
     )
 
     return window
+
 
 def _add_labeled_entry(
     parent: tk.Widget,

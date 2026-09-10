@@ -13,7 +13,21 @@ from ..dispatch.results import ExperimentResult
 from .experiment_data import ExperimentData
 from dataclasses import replace
 from .timeseries_validation import merge_complete_time_series
+from .region_config import RegionConfig, get_region_config
 from ..opendss.opendss_handoff import create_opendss_handoff
+
+
+def resolve_region_config(
+    config: ExperimentConfig,
+) -> RegionConfig:
+    """Apply any per-field overrides on top of the named region's defaults."""
+
+    return replace(
+        get_region_config(config.region),
+        market_location=config.market_location,
+        carbon_zone=config.electricity_maps_zone,
+        timezone=config.timezone,
+    )
 
 
 env_path = find_dotenv()
@@ -751,11 +765,13 @@ def prepare_experiment_data(
         )
     )
 
+    region_config = resolve_region_config(config)
+
     price_data = (
-        gsd.get_caiso_real_time_prices_range(
+        gsd.fetch_region_prices(
+            region_config,
             start_date=config.start_date,
             number_of_days=config.number_of_days,
-            location=config.caiso_node,
             sleep_seconds=config.sleep_seconds,
         )
     )
@@ -766,6 +782,7 @@ def prepare_experiment_data(
             config.electricity_maps_zone,
             config.start_date,
             config.number_of_days,
+            timezone=config.timezone,
         )
     )
 
@@ -779,9 +796,9 @@ def prepare_experiment_data(
 
     validate_integrated_market_data(
         real_market_data,
-        expected_rows=(
-            config.number_of_days * 96
-        ),
+        expected_rows=len(price_data),
+        timestep_minutes=int(config.timestep_hours * 60),
+        expected_timezone=config.timezone,
     )
 
     return ExperimentData(
@@ -1177,6 +1194,10 @@ def main() -> None:
             handoff_metadata = {
                 "scenario": "combined_real",
                 "carbon_weight": carbon_weight,
+                "region": current_config.region,
+                "market_provider": current_config.market_provider,
+                "market_location": current_config.market_location,
+                "carbon_zone": current_config.electricity_maps_zone,
                 "timestep_minutes": int(
                     current_config.timestep_hours * 60
                 ),
@@ -1184,7 +1205,9 @@ def main() -> None:
                 "rows": len(result.opendss_handoff),
                 "zero_tolerance_kw": 1e-6,
                 "units": {
-                    "timestamp": "ISO 8601 Pacific time",
+                    "timestamp": (
+                        f"ISO 8601 {current_config.timezone}"
+                    ),
                     "load_kw": "kW",
                     "pv_kw": "kW",
                     "battery_charge_kw": "kW",

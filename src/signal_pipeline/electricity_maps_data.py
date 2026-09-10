@@ -53,11 +53,23 @@ def get_carbon_intensity_range(
 
 def carbon_range_to_dataframe(
         result: dict,
+        timezone: str = "America/Los_Angeles",
 ) -> pd.DataFrame:
 
     data = pd.DataFrame(
         result["data"]
     )
+
+    missing_columns = {
+        "datetime",
+        "carbonIntensity",
+    } - set(data.columns)
+
+    if missing_columns:
+        raise ValueError(
+            f"Electricity Maps response is missing columns: "
+            f"{sorted(missing_columns)}."
+        )
 
     data = data[
         [
@@ -81,7 +93,7 @@ def carbon_range_to_dataframe(
     data["timestamp"] = (
         data["timestamp"]
         .dt.tz_convert(
-            "America/Los_Angeles"
+            timezone
         )
     )
 
@@ -212,9 +224,11 @@ def create_utc_time_range(
         tz=timezone,
     )
 
+    # DateOffset advances local calendar days; Timedelta would add exactly
+    # 24 hours and drift by an hour across a daylight-saving transition.
     local_end = (
         local_start
-        + pd.Timedelta(days=number_of_days)
+        + pd.DateOffset(days=number_of_days)
     )
 
     utc_start = local_start.tz_convert("UTC")
@@ -236,17 +250,25 @@ def get_multi_day_carbon_data(
         zone: str,
         start_date: str,
         number_of_days: int,
+        timezone: str = "America/Los_Angeles",
     ) -> pd.DataFrame:
+
+    if not api_key:
+        raise ValueError(
+            "Electricity Maps API key is missing. Set "
+            "ELECTRICITY_MAPS_API_KEY in your environment or .env file."
+        )
 
     start, end = create_utc_time_range(
             start_date,
             number_of_days,
+            timezone,
         )
 
     result = get_carbon_intensity_range(
         api_key,
         zone,
-        start,            
+        start,
         end,
     )
 
@@ -259,13 +281,14 @@ def get_multi_day_carbon_data(
 
     carbon_data = (
         carbon_range_to_dataframe(
-            result
+            result,
+            timezone,
         )
     )
 
     validate_carbon_data(
         carbon_data,
-        expected_rows=number_of_days * 96,
+        expected_timezone=timezone,
     )
 
     return carbon_data
