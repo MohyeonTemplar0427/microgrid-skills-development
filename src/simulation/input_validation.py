@@ -192,7 +192,8 @@ def _validate_load_dispatch(
 def _validate_dispatch_power_balance(
     dispatch_data: pd.DataFrame,
     *,
-    tolerance_kw: float = 1e-6,
+    scenario_name: str,
+    tolerance_kw: float = 1e-5,
 ) -> None:
     """Ensure scheduled grid power satisfies the power balance."""
 
@@ -224,9 +225,20 @@ def _validate_dispatch_power_balance(
         - expected_grid_import_kw
     ).abs()
 
-    if (balance_error_kw > tolerance_kw).any():
+    maximum_error_kw = float(balance_error_kw.max())
+
+    if maximum_error_kw > tolerance_kw:
+        failing_index = balance_error_kw.idxmax()
+        failing_timestamp = dispatch_data.loc[
+            failing_index,
+            "timestamp",
+        ]
         raise ValueError(
-            "Dispatch schedule does not satisfy power balance."
+            "Dispatch schedule does not satisfy power balance: "
+            f"scenario={scenario_name!r}, "
+            f"timestamp={failing_timestamp}, "
+            f"maximum error={maximum_error_kw:.8g} kW, "
+            f"tolerance={tolerance_kw:.8g} kW."
         )
 
 
@@ -295,7 +307,7 @@ def validate_dispatch_scenarios(
 
     _validate_specification(specification)
 
-    for dispatch_data in dispatch_scenarios.values():
+    for scenario_name, dispatch_data in dispatch_scenarios.items():
         _validate_dispatch_timestamps(
             dispatch_data,
             timestep_minutes=timestep_minutes,
@@ -313,7 +325,10 @@ def validate_dispatch_scenarios(
             dispatch_data,
         )
         _validate_load_dispatch(dispatch_data)
-        _validate_dispatch_power_balance(dispatch_data)
+        _validate_dispatch_power_balance(
+            dispatch_data,
+            scenario_name=scenario_name,
+        )
 
 
 __all__ = [

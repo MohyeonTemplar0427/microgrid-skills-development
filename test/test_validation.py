@@ -106,6 +106,32 @@ def test_create_validation_report():
         == 101.0
     )
 
+
+def test_create_validation_report_accepts_selected_scenario_subset():
+    dispatch_summary = pd.DataFrame(
+        {
+            "scenario": ["no_battery", "cost_optimal"],
+            "grid_import_energy_kWh": [100.0, 80.0],
+        }
+    )
+    qsts_summary = pd.DataFrame(
+        {
+            "scenario": ["no_battery", "cost_optimal"],
+            "grid_import_energy_kWh": [101.0, 81.0],
+            "grid_export_energy_kWh": [5.0, 3.0],
+        }
+    )
+
+    report = create_validation_report(
+        dispatch_summary,
+        qsts_summary,
+    )
+
+    assert report["scenario"].tolist() == [
+        "no_battery",
+        "cost_optimal",
+    ]
+
 def test_create_opendss_validation_checklist():
     scenario_names = list(
         SCENARIO_OUTPUT_FILENAMES

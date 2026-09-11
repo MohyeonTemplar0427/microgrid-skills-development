@@ -408,6 +408,42 @@ def test_simulate_microgrid_scenarios_rejects_power_imbalance():
         )
 
 
+def test_simulate_microgrid_scenarios_accepts_solver_roundoff(
+    monkeypatch,
+):
+    specification = MicrogridSpecification(
+        battery=Battery(),
+        pv_capacity_kw=30.0,
+        load_kw=25.0,
+    )
+    dispatch_data = pd.DataFrame(
+        {
+            "timestamp": [
+                pd.Timestamp("2026-08-25 12:00:00"),
+            ],
+            "load_kw": [25.0],
+            "pv_kw": [10.0],
+            "battery_net_injection_kw": [2.0],
+            "battery_soc_kWh": [10.0],
+            "grid_net_import_kw": [13.000005],
+        }
+    )
+    expected = {"valid_scenario": dispatch_data}
+
+    monkeypatch.setattr(
+        "src.simulation.microgrid_simulator."
+        "replay_required_dispatch_scenarios",
+        lambda *args, **kwargs: expected,
+    )
+
+    result = simulate_microgrid_scenarios(
+        specification,
+        expected,
+    )
+
+    assert result is expected
+
+
 @pytest.mark.parametrize(
     (
         "timestamps",

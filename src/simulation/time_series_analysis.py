@@ -1,6 +1,7 @@
 """Run complete time-series microgrid analyses."""
 
 from dataclasses import dataclass
+from typing import Callable
 
 import pandas as pd
 
@@ -144,6 +145,8 @@ def run_microgrid_timeseries_analysis(
     expected_timezone: str = "America/Los_Angeles",
     start_time: str | pd.Timestamp | None = None,
     end_time: str | pd.Timestamp | None = None,
+    scenario_names: tuple[str, ...] | None = None,
+    progress_callback: Callable[[str], None] | None = None,
 ) -> TimeSeriesAnalysisResult:
     """Run dispatch, power flow, and performance analysis."""
 
@@ -190,6 +193,9 @@ def run_microgrid_timeseries_analysis(
         specification.battery
     )
 
+    if progress_callback is not None:
+        progress_callback("Optimizing the selected dispatch scenarios")
+
     dispatch_scenarios = (
         create_required_dispatch_scenarios(
             analysis_data,
@@ -200,8 +206,12 @@ def run_microgrid_timeseries_analysis(
             ),
             time_step_minutes=timestep_minutes,
             expected_timezone=expected_timezone,
+            scenario_names=scenario_names,
         )
     )
+
+    if progress_callback is not None:
+        progress_callback("Replaying dispatch through the OpenDSS network")
 
     powerflow_scenarios = (
         simulate_microgrid_scenarios(
@@ -210,6 +220,9 @@ def run_microgrid_timeseries_analysis(
             timestep_minutes=timestep_minutes,
         )
     )
+
+    if progress_callback is not None:
+        progress_callback("Calculating cost, emissions, and electrical metrics")
 
     dispatch_summary = (
         create_dispatch_performance_summary(

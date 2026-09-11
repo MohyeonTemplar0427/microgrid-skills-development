@@ -11,6 +11,10 @@ neither knows anything about one site's consumption or generation, and
 neither is ever used as a source for them.
 """
 
+import hashlib
+import json
+from pathlib import Path
+
 import pandas as pd
 
 from . import electricity_maps_data as emd
@@ -55,6 +59,7 @@ def load_signal_data(
     price_source: PriceSource | None = None,
     integrated_data: pd.DataFrame | None = None,
     carbon_api_key: str | None = None,
+    cache_directory: str | Path | None = None,
 ) -> pd.DataFrame:
     """Return the integrated signal frame for one analysis.
 
@@ -83,6 +88,7 @@ def load_signal_data(
             site_profile=site_profile,
             price_source=price_source,
             carbon_api_key=carbon_api_key,
+            cache_directory=cache_directory,
         )
 
     raise SourceConfigurationError(
@@ -127,6 +133,7 @@ def _load_from_live_api(
     site_profile: pd.DataFrame | None,
     price_source: PriceSource | None,
     carbon_api_key: str | None,
+    cache_directory: str | Path | None,
 ) -> pd.DataFrame:
 
     if site_profile is None:
@@ -154,9 +161,23 @@ def _load_from_live_api(
         market_location=config.market_location,
     )
 
-    prices = source.build_prices(horizon)
+    cache_path = (
+        Path(cache_directory)
+        if cache_directory is not None
+        else None
+    )
 
-    carbon = _fetch_carbon(config, horizon, carbon_api_key)
+    prices = _load_market_prices(
+        source,
+        horizon,
+        cache_path,
+    )
+    carbon = _load_carbon_intensity(
+        config,
+        horizon,
+        carbon_api_key,
+        cache_path,
+    )
 
     merged = profile.merge(prices, on="timestamp", how="inner")
     merged = merged.merge(carbon, on="timestamp", how="inner")
@@ -174,6 +195,141 @@ def _load_from_live_api(
         merged[list(INTEGRATED_COLUMNS)],
         horizon,
     )
+
+
+def _load_market_prices(
+    source: PriceSource,
+    horizon: AnalysisHorizon,
+    cache_directory: Path | None,
+) -> pd.DataFrame:
+    """Load wholesale prices from cache, falling back to the provider."""
+
+    if not isinstance(source, WholesaleMarketPrice):
+        return source.build_prices(horizon)
+
+    cache_key = _build_cache_key(
+        "wholesale_price",
+        horizon,
+        provider=source.market_provider,
+        location=source.market_location,
+        provider_options=source.provider_options,
+    )
+    cached = _read_cached_signal(
+        cache_directory,
+        cache_key,
+        "price_per_kWh",
+        horizon,
+    )
+
+    if cached is not None:
+        return cached
+
+    prices = source.build_prices(horizon)
+    _write_cached_signal(cache_directory, cache_key, prices)
+    return prices
+
+
+def _load_carbon_intensity(
+    config: ResolvedSignalConfig,
+    horizon: AnalysisHorizon,
+    carbon_api_key: str | None,
+    cache_directory: Path | None,
+) -> pd.DataFrame:
+    """Load carbon intensity from cache, falling back to the provider."""
+
+    cache_key = _build_cache_key(
+        "carbon_intensity",
+        horizon,
+        provider=config.carbon_provider,
+        zone=config.carbon_zone,
+    )
+    cached = _read_cached_signal(
+        cache_directory,
+        cache_key,
+        "gCO2/kWh",
+        horizon,
+    )
+
+    if cached is not None:
+        return cached
+
+    carbon = _fetch_carbon(config, horizon, carbon_api_key)
+    _write_cached_signal(cache_directory, cache_key, carbon)
+    return carbon
+
+
+def _build_cache_key(
+    signal_type: str,
+    horizon: AnalysisHorizon,
+    **source_identity,
+) -> str:
+    """Create a stable filename key for one provider request."""
+
+    identity = {
+        "cache_schema": 1,
+        "signal_type": signal_type,
+        "start": horizon.start.isoformat(),
+        "end": horizon.end.isoformat(),
+        "timestep_minutes": horizon.timestep_minutes,
+        "timezone": horizon.timezone,
+        **source_identity,
+    }
+    serialized = json.dumps(
+        identity,
+        sort_keys=True,
+        default=str,
+    ).encode("utf-8")
+    return hashlib.sha256(serialized).hexdigest()
+
+
+def _read_cached_signal(
+    cache_directory: Path | None,
+    cache_key: str,
+    value_column: str,
+    horizon: AnalysisHorizon,
+) -> pd.DataFrame | None:
+    """Return a complete cached signal, or None for a miss/corrupt file."""
+
+    if cache_directory is None:
+        return None
+
+    cache_file = cache_directory / f"{cache_key}.csv"
+
+    if not cache_file.is_file():
+        return None
+
+    try:
+        cached = pd.read_csv(cache_file)
+        if set(cached.columns) != {"timestamp", value_column}:
+            return None
+        cached["timestamp"] = (
+            pd.to_datetime(cached["timestamp"], utc=True)
+            .dt.tz_convert(horizon.timezone)
+        )
+        return align_to_horizon(
+            cached,
+            horizon,
+            label=f"Cached {value_column}",
+        )
+    except (OSError, TypeError, ValueError):
+        return None
+
+
+def _write_cached_signal(
+    cache_directory: Path | None,
+    cache_key: str,
+    signal_data: pd.DataFrame,
+) -> None:
+    """Atomically store normalized provider data for later analyses."""
+
+    if cache_directory is None:
+        return
+
+    cache_directory.mkdir(parents=True, exist_ok=True)
+    cache_file = cache_directory / f"{cache_key}.csv"
+    temporary_file = cache_directory / f"{cache_key}.tmp"
+    signal_data.to_csv(temporary_file, index=False)
+    temporary_file.replace(cache_file)
 
 
 def _fetch_carbon(

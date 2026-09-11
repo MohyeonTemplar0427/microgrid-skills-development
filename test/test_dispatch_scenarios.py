@@ -1,6 +1,7 @@
 """Tests for Week 4 dispatch-scenario construction."""
 
 import pandas as pd
+import pytest
 
 from src.dispatch import single_day_analysis as sda
 from src.dispatch.dispatch_scenarios import (
@@ -110,6 +111,35 @@ def test_create_required_dispatch_scenarios():
             "initial_soc_kWh"
         ]
     ).all()
+
+
+def test_create_required_dispatch_scenarios_skips_unselected_optimizers(
+    monkeypatch,
+):
+    input_data = sda.create_sample_dataframe(
+        date="2026-08-25"
+    )
+
+    def unexpected_call(*args, **kwargs):
+        pytest.fail("An unselected optimizer was called.")
+
+    monkeypatch.setattr(sda, "run_rule_based_dispatch", unexpected_call)
+    monkeypatch.setattr(sda, "run_cost_optimization", unexpected_call)
+    monkeypatch.setattr(sda, "run_carbon_optimization", unexpected_call)
+    monkeypatch.setattr(sda, "run_combined_optimization", unexpected_call)
+
+    scenarios = create_required_dispatch_scenarios(
+        input_data,
+        sda.battery_parameters,
+        carbon_weight=0.20,
+        degradation_cost_per_kWh=0.03,
+        scenario_names=("no_battery",),
+    )
+
+    assert tuple(scenarios) == ("no_battery",)
+    assert scenarios["no_battery"][
+        "battery_net_injection_kw"
+    ].eq(0.0).all()
 
 
 def test_save_required_dispatch_scenarios(

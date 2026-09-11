@@ -3,6 +3,10 @@ import os
 import pandas as pd
 from dotenv import load_dotenv
 from .timeseries_validation import merge_complete_time_series
+from .horizon import combine_chunks_strictly
+
+
+CARBON_API_CHUNK_DAYS_15_MINUTES = 2
 
 load_dotenv()
 
@@ -46,7 +50,15 @@ def get_carbon_intensity_range(
         timeout=30,
     )
 
-    response.raise_for_status()
+    try:
+        response.raise_for_status()
+    except requests.HTTPError as error:
+        response_detail = response.text.strip()[:1000]
+        raise requests.HTTPError(
+            f"{error}. Electricity Maps response: {response_detail}",
+            response=response,
+            request=response.request,
+        ) from error
 
     return response.json()
 
@@ -259,31 +271,57 @@ def get_multi_day_carbon_data(
             "ELECTRICITY_MAPS_API_KEY in your environment or .env file."
         )
 
-    start, end = create_utc_time_range(
-            start_date,
-            number_of_days,
-            timezone,
-        )
-
-    result = get_carbon_intensity_range(
-        api_key,
-        zone,
-        start,
-        end,
-    )
-
-    if (
-        result["temporalGranularity"] != "15_minutes"
-    ):
+    if number_of_days <= 0:
         raise ValueError(
-        "Electricity Maps did not return 15-minute data."
+            "Number of carbon-data days must be positive."
         )
 
-    carbon_data = (
-        carbon_range_to_dataframe(
-            result,
+    carbon_chunks = []
+    local_start = pd.Timestamp(start_date)
+
+    for day_offset in range(
+        0,
+        number_of_days,
+        CARBON_API_CHUNK_DAYS_15_MINUTES,
+    ):
+        chunk_days = min(
+            CARBON_API_CHUNK_DAYS_15_MINUTES,
+            number_of_days - day_offset,
+        )
+        chunk_start_date = (
+            local_start
+            + pd.DateOffset(days=day_offset)
+        ).strftime("%Y-%m-%d")
+
+        start, end = create_utc_time_range(
+            chunk_start_date,
+            chunk_days,
             timezone,
         )
+
+        result = get_carbon_intensity_range(
+            api_key,
+            zone,
+            start,
+            end,
+        )
+
+        if result["temporalGranularity"] != "15_minutes":
+            raise ValueError(
+                "Electricity Maps did not return 15-minute data."
+            )
+
+        carbon_chunks.append(
+            carbon_range_to_dataframe(
+                result,
+                timezone,
+            )
+        )
+
+    carbon_data = combine_chunks_strictly(
+        carbon_chunks,
+        value_columns=("gCO2/kWh",),
+        label="Electricity Maps carbon intensity",
     )
 
     validate_carbon_data(
@@ -301,5 +339,4 @@ def get_multi_day_carbon_data(
 
 
     
-
 

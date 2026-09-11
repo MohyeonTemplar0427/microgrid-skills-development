@@ -2,10 +2,8 @@
 
 import pandas as pd
 
+from ..analysis.no_battery import create_no_battery_dispatch
 from ..opendss.opendss_handoff import create_opendss_handoff
-from ..opendss.qsts_analysis import(
-    create_no_battery_replay_schedule,
-)
 
 from . import single_day_analysis as sda
 
@@ -28,12 +26,20 @@ SCENARIO_OUTPUT_FILENAMES = {  # NEW
     ),
 }
 
+OPTIMIZED_SCENARIO_NAMES = (
+    "rule_based",
+    "cost_optimal",
+    "carbon_optimal",
+    "combined_optimal",
+)
+
 def create_optimized_dispatch_scenarios(
         data:pd.DataFrame,
         battery_parameters: dict[str, float],
         *,
         carbon_weight: float,
         degradation_cost_per_kWh: float,
+        scenario_names: tuple[str, ...] | None = None,
 ) -> dict[str, pd.DataFrame]:
     """Create rule-based and optimized dispatch schedules."""
 
@@ -68,35 +74,48 @@ def create_optimized_dispatch_scenarios(
             "Degradation cost must not be negative."
         )
 
-    return {
-        "rule_based": sda.run_rule_based_dispatch(
+    requested_names = (
+        OPTIMIZED_SCENARIO_NAMES
+        if scenario_names is None
+        else tuple(scenario_names)
+    )
+    unsupported_names = (
+        set(requested_names) - set(OPTIMIZED_SCENARIO_NAMES)
+    )
+
+    if unsupported_names:
+        raise ValueError(
+            "Unsupported optimized scenarios: "
+            f"{sorted(unsupported_names)}"
+        )
+
+    builders = {
+        "rule_based": lambda: sda.run_rule_based_dispatch(
             data.copy(),
             battery_parameters,
             strategy="price",
         ),
-        # In this cost_optimal case, we don't use cost_optimization function
-        # that we consider degradtion parameter for optimization.
-        "cost_optimal": sda.run_cost_optimization(
+        "cost_optimal": lambda: sda.run_cost_optimization(
             data.copy(),
             battery_parameters,
-            degradation_cost_per_kWh=(
-                degradation_cost_per_kWh
-            ),
+            degradation_cost_per_kWh=degradation_cost_per_kWh,
         ),
-
-        "carbon_optimal": sda.run_carbon_optimization(
+        "carbon_optimal": lambda: sda.run_carbon_optimization(
             data.copy(),
             battery_parameters,
         ),
-
-        "combined_optimal": sda.run_combined_optimization(
+        "combined_optimal": lambda: sda.run_combined_optimization(
             data.copy(),
             battery_parameters,
             carbon_weight=carbon_weight,
-            degradation_cost_per_kWh=(
-                degradation_cost_per_kWh
-            ),
+            degradation_cost_per_kWh=degradation_cost_per_kWh,
         ),
+    }
+
+    return {
+        name: builders[name]()
+        for name in OPTIMIZED_SCENARIO_NAMES
+        if name in requested_names
     }
 
 
@@ -108,8 +127,27 @@ def create_required_dispatch_scenarios(
         degradation_cost_per_kWh: float,
         time_step_minutes: int = 15,
         expected_timezone: str = "America/Los_Angeles",
+        scenario_names: tuple[str, ...] | None = None,
 ) -> dict[str, pd.DataFrame]:
-    """Create all five OpenDSS-ready Week 4 schedules."""
+    """Create only the requested OpenDSS-ready dispatch schedules."""
+
+    requested_names = (
+        tuple(SCENARIO_OUTPUT_FILENAMES)
+        if scenario_names is None
+        else tuple(scenario_names)
+    )
+    unsupported_names = set(requested_names) - set(
+        SCENARIO_OUTPUT_FILENAMES
+    )
+
+    if not requested_names:
+        raise ValueError("Select at least one dispatch scenario.")
+
+    if unsupported_names:
+        raise ValueError(
+            "Unsupported dispatch scenarios: "
+            f"{sorted(unsupported_names)}"
+        )
 
     optimized_scenarios = (
         create_optimized_dispatch_scenarios(
@@ -117,6 +155,11 @@ def create_required_dispatch_scenarios(
             battery_parameters,
             carbon_weight=carbon_weight,
             degradation_cost_per_kWh=(degradation_cost_per_kWh),
+            scenario_names=tuple(
+                name
+                for name in requested_names
+                if name != "no_battery"
+            ),
         )
     )
 
@@ -130,19 +173,21 @@ def create_required_dispatch_scenarios(
         in optimized_scenarios.items()
     }
 
-    ## Remove battery operation
-    no_battery = create_no_battery_replay_schedule(
-        opendss_scenarios["combined_optimal"]
-    )
-
-    # Replay interface requires SOC even for no-battery, so put in fake value
-    no_battery["battery_soc_kWh"] = (
-        battery_parameters["initial_soc_kWh"]
-    )
+    if "no_battery" in requested_names:
+        no_battery = create_no_battery_dispatch(data)
+        no_battery["battery_soc_kWh"] = (
+            battery_parameters["initial_soc_kWh"]
+        )
+        opendss_scenarios["no_battery"] = create_opendss_handoff(
+            no_battery,
+            timestep_minutes=time_step_minutes,
+            expected_timezone=expected_timezone,
+        )
 
     return {
-        "no_battery": no_battery,
-        **opendss_scenarios,
+        name: opendss_scenarios[name]
+        for name in SCENARIO_OUTPUT_FILENAMES
+        if name in requested_names
     }
 
 def save_required_dispatch_scenarios(

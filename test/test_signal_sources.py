@@ -721,3 +721,65 @@ def test_live_api_loader_joins_site_profile_with_market_signals(monkeypatch):
     assert data["net_load_kw"].eq(8.0).all()
     assert data["price_per_kWh"].eq(0.2).all()
     assert data["gCO2/kWh"].eq(300.0).all()
+
+
+def test_live_api_loader_reuses_cached_provider_signals(
+    monkeypatch,
+    tmp_path,
+):
+    horizon = make_horizon()
+    config = resolve_live_api_config("caiso_np15")
+    site_profile = pd.DataFrame(
+        {
+            "timestamp": horizon.index,
+            "load_kw": 10.0,
+            "pv_kw": 2.0,
+        }
+    )
+    call_count = {"price": 0, "carbon": 0}
+
+    def fake_prices(self, requested_horizon):
+        call_count["price"] += 1
+        return pd.DataFrame(
+            {
+                "timestamp": requested_horizon.index,
+                "price_per_kWh": 0.2,
+            }
+        )
+
+    def fake_carbon(*args, **kwargs):
+        call_count["carbon"] += 1
+        return pd.DataFrame(
+            {
+                "timestamp": horizon.index,
+                "gCO2/kWh": 300.0,
+            }
+        )
+
+    monkeypatch.setattr(
+        WholesaleMarketPrice,
+        "build_prices",
+        fake_prices,
+    )
+    monkeypatch.setattr(
+        "src.signal_pipeline.signal_loader.emd.get_multi_day_carbon_data",
+        fake_carbon,
+    )
+
+    first = load_signal_data(
+        config,
+        horizon,
+        site_profile=site_profile,
+        carbon_api_key="test-key",
+        cache_directory=tmp_path,
+    )
+    second = load_signal_data(
+        config,
+        horizon,
+        site_profile=site_profile,
+        carbon_api_key="test-key",
+        cache_directory=tmp_path,
+    )
+
+    assert call_count == {"price": 1, "carbon": 1}
+    pd.testing.assert_frame_equal(first, second)

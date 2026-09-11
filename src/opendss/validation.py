@@ -43,10 +43,17 @@ def create_dispatch_performance_summary(
         SCENARIO_OUTPUT_FILENAMES
     )
 
-    if set(dispatch_scenarios) != expected_names:
+    received_names = set(dispatch_scenarios)
+
+    if not received_names:
         raise ValueError(
-            "Dispatch scenario names do not match "
-            "the required Week 4 scenarios."
+            "At least one dispatch scenario is required."
+        )
+
+    if not received_names.issubset(expected_names):
+        raise ValueError(
+            "Dispatch scenarios contain unsupported names: "
+            f"{sorted(received_names - expected_names)}"
         )
 
     required_market_columns = {
@@ -174,16 +181,24 @@ def create_validation_report(
         qsts_summary["scenario"]
     )
 
-    if dispatch_names != expected_names:
+    if not dispatch_names:
         raise ValueError(
-            "Dispatch summary does not contain all "
-            "required Week 4 scenarios."
+            "Dispatch summary must contain at least one scenario."
         )
 
-    if qsts_names != expected_names:
+    unexpected_names = (
+        dispatch_names | qsts_names
+    ) - expected_names
+
+    if unexpected_names:
         raise ValueError(
-            "QSTS summary does not contain all "
-            "required Week 4 scenarios."
+            "Summaries contain unsupported scenarios: "
+            f"{sorted(unexpected_names)}"
+        )
+
+    if dispatch_names != qsts_names:
+        raise ValueError(
+            "Dispatch and QSTS summaries must contain the same scenarios."
         )
 
     renamed_dispatch_summary = (

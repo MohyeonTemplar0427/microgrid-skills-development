@@ -213,12 +213,15 @@ def test_run_timeseries_analysis_coordinates_pipeline(
 
     specification = _make_specification()
 
+    progress_messages = []
+
     result = run_microgrid_timeseries_analysis(
         specification,
         _make_signal_data(),
         timestep_minutes=30,
         carbon_weight=0.25,
         degradation_cost_per_kWh=0.04,
+        progress_callback=progress_messages.append,
     )
 
     assert isinstance(result, TimeSeriesAnalysisResult)
@@ -238,6 +241,7 @@ def test_run_timeseries_analysis_coordinates_pipeline(
         == 0.04
     )
     assert dispatch_call.kwargs["time_step_minutes"] == 30
+    assert dispatch_call.kwargs["scenario_names"] is None
 
     metric_call = mock_dispatch_summary.call_args
     assert metric_call.kwargs["timestep_hours"] == 0.5
@@ -250,6 +254,11 @@ def test_run_timeseries_analysis_coordinates_pipeline(
         dispatch_summary,
         powerflow_summary,
     )
+    assert progress_messages == [
+        "Optimizing the selected dispatch scenarios",
+        "Replaying dispatch through the OpenDSS network",
+        "Calculating cost, emissions, and electrical metrics",
+    ]
 
 
 def test_run_timeseries_analysis_selects_requested_range(
