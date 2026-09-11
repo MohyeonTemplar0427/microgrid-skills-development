@@ -22,6 +22,11 @@ class RegionConfig:
     timezone: str
     description: str = ""
 
+    # Construction options for the adapter, for providers that front more
+    # than one market and so cannot infer dataset or timezone from the
+    # provider name alone. Options an adapter does not accept are dropped.
+    provider_options: dict | None = None
+
 
 REGION_REGISTRY: dict[str, RegionConfig] = {
     "caiso_np15": RegionConfig(
@@ -56,6 +61,24 @@ REGION_REGISTRY: dict[str, RegionConfig] = {
             "PJM Western Hub (pnode 51288), Mid-Atlantic. "
             "Requires PJM_API_KEY."
         ),
+    ),
+    "pjm_western_hub_gridstatus": RegionConfig(
+        region="pjm_western_hub_gridstatus",
+        market_provider="gridstatus_io",
+        market_location="WESTERN HUB",
+        carbon_provider="electricity_maps",
+        carbon_zone="US-MIDA-PJM",
+        timezone="America/New_York",
+        description=(
+            "PJM Western Hub via the GridStatus.io hosted API. Same market "
+            "as pjm_western_hub, but reached with a self-serve "
+            "GRIDSTATUS_API_KEY instead of PJM's own credential."
+        ),
+        provider_options={
+            "dataset": "pjm_lmp_real_time_5_min",
+            "timezone": "America/New_York",
+            "native_interval_minutes": 5,
+        },
     ),
 }
 

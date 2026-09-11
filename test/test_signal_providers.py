@@ -4,6 +4,8 @@ Every test runs against fabricated frames shaped like real gridstatus
 responses. Nothing here contacts a live API.
 """
 
+import os
+
 import pandas as pd
 import pytest
 
@@ -338,6 +340,20 @@ def test_ercot_reads_the_spp_column_not_lmp(monkeypatch):
 def test_ercot_needs_no_credentials():
     assert ERCOTProvider().requires_credentials is False
     assert ERCOTProvider().credential_env_var is None
+
+
+def test_ercot_configures_python_certificate_bundle(monkeypatch):
+    client = FakeERCOTClient(make_ercot_frame())
+    monkeypatch.setattr("gridstatus.Ercot", lambda: client)
+    monkeypatch.delenv("SSL_CERT_FILE", raising=False)
+
+    ERCOTProvider().fetch_energy_prices(
+        pd.Timestamp("2026-08-25 00:00", tz=CENTRAL),
+        pd.Timestamp("2026-08-25 01:00", tz=CENTRAL),
+        "HB_HOUSTON",
+    )
+
+    assert os.environ["SSL_CERT_FILE"].endswith("cacert.pem")
 
 
 def test_ercot_is_native_fifteen_minute_and_needs_no_resampling(monkeypatch):

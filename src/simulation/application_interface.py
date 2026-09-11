@@ -128,12 +128,6 @@ class MicrogridApplication:
             font=("Arial", 22, "bold"),
         ).pack(side="left")
 
-        ttk.Button(
-            header,
-            text="Manual Operating-Point Tool",
-            command=self._open_manual_tool,
-        ).pack(side="right")
-
     def _new_page(self, name: str) -> ttk.Frame:
         page = ttk.Frame(self.page_container)
         page.grid(row=0, column=0, sticky="nsew")
@@ -1133,12 +1127,6 @@ class MicrogridApplication:
             direction = -1 if event.delta > 0 else 1
             self.table_canvas.xview_scroll(direction, "units")
         return "break"
-
-    def _open_manual_tool(self) -> None:
-        from .graphical_interface import create_application_window
-
-        create_application_window(parent=self.window)
-
 
 def _run_csv_worker_process(
     message_queue,

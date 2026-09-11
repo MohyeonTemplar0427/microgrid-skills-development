@@ -89,6 +89,7 @@ def fetch_region_prices(
         region_config.market_location,
         provider=region_config.market_provider,
         sleep_seconds=sleep_seconds,
+        **(region_config.provider_options or {}),
     )
 
     validate_price_data(

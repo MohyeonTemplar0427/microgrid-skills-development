@@ -3,6 +3,7 @@
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
 import src.simulation.interface_analysis as interface_analysis
 from src.dispatch.battery import Battery
@@ -14,6 +15,7 @@ from src.simulation.interface_analysis import (
     run_integrated_csv_analysis,
 )
 from src.signal_pipeline.horizon import build_horizon
+from src.signal_pipeline.price_sources import WholesaleMarketPrice
 from src.simulation.model_specifications import MicrogridSpecification
 
 
@@ -174,3 +176,107 @@ def test_build_analysis_details_describes_live_study_horizon():
         "2026-08-25 → 2026-08-26 (both dates included)"
     )
     assert details["Time interval"] == "15 minutes"
+
+
+@pytest.mark.parametrize(
+    ("region_id", "expected_timezone"),
+    [
+        ("ercot_houston_hub", "America/Chicago"),
+        ("pjm_western_hub", "America/New_York"),
+    ],
+)
+def test_live_regional_analysis_reaches_opendss_results(
+    monkeypatch,
+    tmp_path,
+    region_id,
+    expected_timezone,
+):
+    def fake_prices(self, horizon):
+        return pd.DataFrame(
+            {
+                "timestamp": horizon.index,
+                "price_per_kWh": 0.10,
+            }
+        )
+
+    def fake_carbon(
+        api_key,
+        zone,
+        start_date,
+        number_of_days,
+        timezone,
+    ):
+        horizon = build_horizon(
+            start_date,
+            number_of_days,
+            timezone,
+            15,
+        )
+        return pd.DataFrame(
+            {
+                "timestamp": horizon.index,
+                "gCO2/kWh": 300.0,
+            }
+        )
+
+    monkeypatch.setattr(
+        WholesaleMarketPrice,
+        "build_prices",
+        fake_prices,
+    )
+    monkeypatch.setattr(
+        "src.signal_pipeline.signal_loader."
+        "emd.get_multi_day_carbon_data",
+        fake_carbon,
+    )
+    monkeypatch.setattr(
+        interface_analysis,
+        "DEFAULT_SIGNAL_CACHE_DIRECTORY",
+        tmp_path,
+    )
+
+    specification = MicrogridSpecification(
+        battery=Battery(
+            capacity_kWh=20,
+            energy_kWh=10,
+            max_charge_kw=5,
+            max_discharge_kw=5,
+        ),
+        pv_capacity_kw=30,
+        load_kw=25,
+    )
+    result = interface_analysis.run_live_api_analysis(
+        specification,
+        start_date="2026-08-25",
+        number_of_days=1,
+        timestep_minutes=15,
+        region_id=region_id,
+        market_provider=None,
+        market_location=None,
+        carbon_provider=None,
+        carbon_zone=None,
+        timezone=None,
+        price_mode="wholesale_market",
+        fixed_retail_price=None,
+        price_csv_path=None,
+        selected_scenarios=("no_battery", "cost_optimal"),
+        carbon_weights=(0.20,),
+        degradation_cost_per_kWh=0.03,
+    )
+
+    assert result.comparison["scenario"].tolist() == [
+        "no_battery",
+        "cost_optimal",
+    ]
+    assert all(
+        frame["converged"].all()
+        for frame in result.runs_by_carbon_weight[
+            0.20
+        ].powerflow_scenarios.values()
+    )
+    assert all(
+        str(frame["timestamp"].dt.tz) == expected_timezone
+        for frame in result.runs_by_carbon_weight[
+            0.20
+        ].dispatch_scenarios.values()
+    )

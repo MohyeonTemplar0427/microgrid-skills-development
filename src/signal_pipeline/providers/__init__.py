@@ -24,11 +24,13 @@ from .base import (
 )
 from .caiso import CAISOProvider
 from .ercot import ERCOTProvider
+from .gridstatus_io import GridStatusIOProvider
 from .pjm import PJMProvider
 
 PROVIDER_REGISTRY: dict[str, type[MarketProvider]] = {
     "caiso": CAISOProvider,
     "ercot": ERCOTProvider,
+    "gridstatus_io": GridStatusIOProvider,
     "pjm": PJMProvider,
 }
 
@@ -78,6 +80,7 @@ __all__ = [
     "DuplicateIntervalError",
     "ERCOTProvider",
     "EmptyResponseError",
+    "GridStatusIOProvider",
     "InvalidLocationError",
     "MarketProvider",
     "MissingCredentialsError",

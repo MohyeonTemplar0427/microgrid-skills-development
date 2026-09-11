@@ -14,6 +14,9 @@ Two things differ from the other adapters:
 No credentials are required; gridstatus reads ERCOT's public MIS reports.
 """
 
+import os
+
+import certifi
 import gridstatus
 import pandas as pd
 
@@ -71,6 +74,10 @@ class ERCOTProvider(MarketProvider):
             )
 
         client = gridstatus.Ercot()
+        os.environ.setdefault(
+            "SSL_CERT_FILE",
+            certifi.where(),
+        )
 
         try:
             raw_data = client.get_spp(
