@@ -12,11 +12,13 @@ from .time_series_graphical_interface import (
 )
 
 
-def create_application_window() -> tk.Tk:
-    """Create the main microgrid simulation window."""
+def create_application_window(
+    parent: tk.Misc | None = None,
+) -> tk.Tk | tk.Toplevel:
+    """Create the secondary manual operating-point window."""
 
-    window = tk.Tk()
-    window.title("Microgrid Simulator")
+    window = tk.Toplevel(parent) if parent else tk.Tk()
+    window.title("Manual Operating-Point Tool")
     window.geometry("700x850")
 
     heading = ttk.Label(
@@ -429,9 +431,13 @@ def _run_snapshot_from_entries(
 
 
 def main() -> None:
-    """Launch the graphical microgrid simulator."""
+    """Launch the guided graphical microgrid-analysis application."""
 
-    window = create_application_window()
+    from .application_interface import (
+        create_guided_application_window,
+    )
+
+    window = create_guided_application_window()
     print("\nSimulator window is open....")
     window.mainloop()
 
