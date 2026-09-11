@@ -241,10 +241,14 @@ battery_parameters = {
 def run_carbon_optimization(
         data: pd.DataFrame,
         battery_parameters: dict[str, float],
+        *,
+        timestep_hours: float = 0.25,
 )->pd.DataFrame:
 
     number_of_steps = len(data)
-    timestep_hours = 0.25
+
+    if timestep_hours <= 0:
+        raise ValueError("Timestep hours must be positive.")
 
     initial_soc_kWh = battery_parameters["initial_soc_kWh"]
     min_soc_kWh = battery_parameters["min_soc_kWh"]
@@ -387,10 +391,13 @@ def run_cost_optimization(
         battery_parameters: dict[str, float],
         *,
         degradation_cost_per_kWh: float = 0.0,
+        timestep_hours: float = 0.25,
 ) -> pd.DataFrame:
 
     number_of_steps = len(data)
-    timestep_hours = 0.25
+
+    if timestep_hours <= 0:
+        raise ValueError("Timestep hours must be positive.")
 
     if degradation_cost_per_kWh < 0:
         raise ValueError(
@@ -537,9 +544,12 @@ def run_rule_based_dispatch(
         data: pd.DataFrame,
         battery_parameters: dict[str, float],
         strategy: str = "price",
+        *,
+        timestep_hours: float = 0.25,
 ) -> pd.DataFrame:
 
-    timestep_hours = 0.25
+    if timestep_hours <= 0:
+        raise ValueError("Timestep hours must be positive.")
 
     discharge_price_threshold = 0.30
     discharge_carbon_threshold = 350.0
@@ -715,10 +725,13 @@ def run_combined_optimization(
         battery_parameters: dict[str, float],
         carbon_weight: float,
         degradation_cost_per_kWh: float,
+        timestep_hours: float = 0.25,
 )->pd.DataFrame:
 
     number_of_steps = len(data)
-    timestep_hours = 0.25
+
+    if timestep_hours <= 0:
+        raise ValueError("Timestep hours must be positive.")
 
     initial_soc_kWh = battery_parameters["initial_soc_kWh"]
     min_soc_kWh = battery_parameters["min_soc_kWh"]

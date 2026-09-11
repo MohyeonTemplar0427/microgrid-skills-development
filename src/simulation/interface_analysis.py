@@ -390,6 +390,22 @@ def _run_selected_signal_analysis(
         ignore_index=True,
     )
 
+    if "carbon_weight" not in comparison.columns:
+        comparison["carbon_weight"] = first_weight
+    else:
+        comparison["carbon_weight"] = comparison["carbon_weight"].fillna(
+            first_weight
+        )
+
+    comparison["monetized_carbon_cost"] = (
+        comparison["carbon_weight"]
+        * comparison["emissions_kgCO2"]
+    )
+    comparison["carbon_adjusted_operating_cost"] = (
+        comparison["total_explicit_cost"]
+        + comparison["monetized_carbon_cost"]
+    )
+
     analysis_days = (
         pd.Timestamp(end_date).date()
         - pd.Timestamp(start_date).date()
@@ -418,6 +434,7 @@ def format_comparison_for_display(comparison: pd.DataFrame) -> str:
         "degradation_cost",
         "total_explicit_cost",
         "emissions_kgCO2",
+        "carbon_adjusted_operating_cost",
         "pcc_grid_import_energy_kWh",
         "peak_grid_import_kw",
         "minimum_voltage_pu",
@@ -443,6 +460,7 @@ RESULT_TABLE_COLUMNS = (
     ("average_daily_efc", "Avg daily EFC"),
     ("total_explicit_cost", "Total cost ($)"),
     ("emissions_kgCO2", "Emissions (kgCO2)"),
+    ("carbon_adjusted_operating_cost", "Carbon-adjusted cost ($)"),
     ("pcc_grid_import_energy_kWh", "Grid import (kWh)"),
     ("peak_grid_import_kw", "Peak import (kW)"),
     ("minimum_voltage_pu", "Min voltage (pu)"),
@@ -459,13 +477,18 @@ def build_results_table(
 ) -> tuple[tuple[str, ...], list[tuple[str, ...]]]:
     """Convert a comparison frame into user-facing table headings and rows."""
 
-    headings = tuple(label for _, label in RESULT_TABLE_COLUMNS)
+    displayed_columns = tuple(
+        (column, label)
+        for column, label in RESULT_TABLE_COLUMNS
+        if column in comparison.columns
+    )
+    headings = tuple(label for _, label in displayed_columns)
     rows: list[tuple[str, ...]] = []
 
     for _, result in comparison.iterrows():
         row_values = []
 
-        for column, _label in RESULT_TABLE_COLUMNS:
+        for column, _label in displayed_columns:
             if column == "scenario":
                 value = str(result[column])
             else:

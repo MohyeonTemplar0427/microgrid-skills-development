@@ -142,6 +142,28 @@ def test_create_required_dispatch_scenarios_skips_unselected_optimizers(
     ].eq(0.0).all()
 
 
+def test_optimizer_receives_configured_timestep(monkeypatch):
+    input_data = sda.create_sample_dataframe(date="2026-08-25")
+    received = {}
+
+    def fake_rule_based(data, battery_parameters, strategy, *, timestep_hours):
+        received["timestep_hours"] = timestep_hours
+        return data
+
+    monkeypatch.setattr(sda, "run_rule_based_dispatch", fake_rule_based)
+
+    create_optimized_dispatch_scenarios(
+        input_data,
+        sda.battery_parameters,
+        carbon_weight=0.20,
+        degradation_cost_per_kWh=0.03,
+        timestep_minutes=60,
+        scenario_names=("rule_based",),
+    )
+
+    assert received["timestep_hours"] == pytest.approx(1.0)
+
+
 def test_save_required_dispatch_scenarios(
     tmp_path,
 ):

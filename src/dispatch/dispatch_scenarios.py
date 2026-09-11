@@ -39,6 +39,7 @@ def create_optimized_dispatch_scenarios(
         *,
         carbon_weight: float,
         degradation_cost_per_kWh: float,
+        timestep_minutes: int = 15,
         scenario_names: tuple[str, ...] | None = None,
 ) -> dict[str, pd.DataFrame]:
     """Create rule-based and optimized dispatch schedules."""
@@ -74,6 +75,11 @@ def create_optimized_dispatch_scenarios(
             "Degradation cost must not be negative."
         )
 
+    if timestep_minutes <= 0:
+        raise ValueError("Timestep minutes must be positive.")
+
+    timestep_hours = timestep_minutes / 60.0
+
     requested_names = (
         OPTIMIZED_SCENARIO_NAMES
         if scenario_names is None
@@ -94,21 +100,25 @@ def create_optimized_dispatch_scenarios(
             data.copy(),
             battery_parameters,
             strategy="price",
+            timestep_hours=timestep_hours,
         ),
         "cost_optimal": lambda: sda.run_cost_optimization(
             data.copy(),
             battery_parameters,
             degradation_cost_per_kWh=degradation_cost_per_kWh,
+            timestep_hours=timestep_hours,
         ),
         "carbon_optimal": lambda: sda.run_carbon_optimization(
             data.copy(),
             battery_parameters,
+            timestep_hours=timestep_hours,
         ),
         "combined_optimal": lambda: sda.run_combined_optimization(
             data.copy(),
             battery_parameters,
             carbon_weight=carbon_weight,
             degradation_cost_per_kWh=degradation_cost_per_kWh,
+            timestep_hours=timestep_hours,
         ),
     }
 
@@ -155,6 +165,7 @@ def create_required_dispatch_scenarios(
             battery_parameters,
             carbon_weight=carbon_weight,
             degradation_cost_per_kWh=(degradation_cost_per_kWh),
+            timestep_minutes=time_step_minutes,
             scenario_names=tuple(
                 name
                 for name in requested_names

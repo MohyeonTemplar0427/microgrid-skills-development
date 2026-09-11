@@ -5,6 +5,8 @@ from typing import Callable
 
 import pandas as pd
 
+from ..timeseries import normalize_any_frame, to_legacy_columns
+
 from ..dispatch.config import to_optimizer_parameters
 from ..dispatch.dispatch_scenarios import (
     create_required_dispatch_scenarios,
@@ -188,6 +190,18 @@ def run_microgrid_timeseries_analysis(
         )
 
     timestep_hours = timestep_minutes / 60.0
+
+    analysis_data = _normalize_signal_timestamps(
+        analysis_data,
+        expected_timezone=expected_timezone,
+    )
+
+    canonical_analysis_data = normalize_any_frame(
+        analysis_data,
+        timestep_minutes=timestep_minutes,
+        rated_pv_capacity_kw=specification.pv_capacity_kw,
+    )
+    analysis_data = to_legacy_columns(canonical_analysis_data)
 
     battery_parameters = to_optimizer_parameters(
         specification.battery

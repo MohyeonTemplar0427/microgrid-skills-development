@@ -323,7 +323,16 @@ def test_run_timeseries_analysis_selects_requested_range(
     assert range_arguments["end_time"] == (
         "2026-08-25 00:30:00"
     )
-    assert mock_dispatch_creator.call_args.args[0] is selected_data
+    normalized_dispatch_input = mock_dispatch_creator.call_args.args[0]
+    assert len(normalized_dispatch_input) == len(selected_data)
+    assert {
+        "native_load_kw",
+        "pv_available_kw",
+        "carbon_intensity_g_per_kWh",
+        "load_kw",
+        "pv_kw",
+        "gCO2/kWh",
+    }.issubset(normalized_dispatch_input.columns)
 
 
 @pytest.mark.parametrize(

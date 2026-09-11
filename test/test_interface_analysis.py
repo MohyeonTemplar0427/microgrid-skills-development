@@ -105,6 +105,13 @@ def test_run_integrated_csv_analysis_filters_and_names_scenarios(
         "combined_optimal_0.10",
         "combined_optimal_0.20",
     ]
+    by_scenario = result.comparison.set_index("scenario")
+    assert by_scenario.loc[
+        "no_battery", "carbon_adjusted_operating_cost"
+    ] == pytest.approx(12.0)
+    assert by_scenario.loc[
+        "combined_optimal_0.20", "carbon_adjusted_operating_cost"
+    ] == pytest.approx(11.0)
     assert any(
         "test backend phase" in message
         for message in progress_messages
