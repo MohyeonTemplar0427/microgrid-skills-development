@@ -5,6 +5,7 @@ from decimal import Decimal
 import pytest
 
 from src.simulation.application_interface import (
+    MicrogridApplication,
     build_review_rows,
     calculate_progress_percentage,
     calculate_inclusive_day_count,
@@ -20,6 +21,47 @@ class FakeBooleanVariable:
 
     def get(self) -> bool:
         return self.value
+
+
+class FakeProcess:
+    def __init__(self, alive=True) -> None:
+        self.alive = alive
+        self.terminated = False
+        self.joined = False
+        self.closed = False
+
+    def is_alive(self):
+        return self.alive
+
+    def terminate(self):
+        self.terminated = True
+        self.alive = False
+
+    def join(self, timeout=None):
+        self.joined = True
+
+    def close(self):
+        self.closed = True
+
+
+class FakeQueue:
+    def __init__(self) -> None:
+        self.closed = False
+        self.joined = False
+
+    def close(self):
+        self.closed = True
+
+    def join_thread(self):
+        self.joined = True
+
+
+class FakeWindow:
+    def __init__(self) -> None:
+        self.destroyed = False
+
+    def destroy(self):
+        self.destroyed = True
 
 
 def test_selected_strategies_keeps_display_order():
@@ -93,6 +135,27 @@ def test_progress_percentage_advances_left_to_right():
 
     assert progress == [5.0, 27.5, 50.0, 72.5, 95.0]
     assert progress == sorted(progress)
+
+
+def test_close_application_releases_process_and_queue():
+    application = MicrogridApplication.__new__(MicrogridApplication)
+    application.is_closing = False
+    application.analysis_process = FakeProcess(alive=True)
+    application.analysis_messages = FakeQueue()
+    application.window = FakeWindow()
+
+    process = application.analysis_process
+    messages = application.analysis_messages
+    window = application.window
+
+    application._close_application()
+
+    assert process.terminated
+    assert process.joined
+    assert process.closed
+    assert messages.closed
+    assert messages.joined
+    assert window.destroyed
 
 
 @pytest.mark.parametrize(

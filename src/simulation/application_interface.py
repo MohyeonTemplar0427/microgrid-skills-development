@@ -62,6 +62,11 @@ class MicrogridApplication:
         self.analysis_process: multiprocessing.Process | None = None
         self.worker_exit_empty_polls = 0
         self.analysis_started_at: float | None = None
+        self.is_closing = False
+        self.window.protocol(
+            "WM_DELETE_WINDOW",
+            self._close_application,
+        )
 
         self._build_header()
 
@@ -906,6 +911,9 @@ class MicrogridApplication:
     def _poll_analysis_messages(self) -> None:
         """Process a completed worker message without blocking Tkinter."""
 
+        if self.is_closing:
+            return
+
         if self.analysis_started_at is not None:
             elapsed = time.perf_counter() - self.analysis_started_at
             self.elapsed_message.set(
@@ -938,6 +946,7 @@ class MicrogridApplication:
                         "The simulation worker exited without returning a result. "
                         f"Exit code: {exit_code}."
                     )
+                    self._release_finished_analysis_process()
                     return
 
             self.window.after(100, self._poll_analysis_messages)
@@ -953,6 +962,7 @@ class MicrogridApplication:
             return
 
         self.run_analysis_button.configure(state="normal")
+        self._release_finished_analysis_process()
 
         elapsed = (
             time.perf_counter() - self.analysis_started_at
@@ -988,6 +998,43 @@ class MicrogridApplication:
             "Scroll horizontally to inspect every reported metric."
         )
         self._render_results_table(payload.comparison)
+
+    def _release_finished_analysis_process(self) -> None:
+        """Join and close a worker after it has returned its final message."""
+
+        process = self.analysis_process
+
+        if process is None:
+            return
+
+        process.join(timeout=1.0)
+
+        if process.is_alive():
+            return
+
+        process.close()
+        self.analysis_process = None
+
+    def _close_application(self) -> None:
+        """Release multiprocessing resources before destroying the window."""
+
+        if self.is_closing:
+            return
+
+        self.is_closing = True
+        process = self.analysis_process
+
+        if process is not None:
+            if process.is_alive():
+                process.terminate()
+            process.join(timeout=2.0)
+            if not process.is_alive():
+                process.close()
+            self.analysis_process = None
+
+        self.analysis_messages.close()
+        self.analysis_messages.join_thread()
+        self.window.destroy()
 
     def _set_analysis_message(self, message: str) -> None:
         """Update the short message shown above the result table."""
