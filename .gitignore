@@ -3,3 +3,6 @@
 __pycache__/
 *.pyc
 .cache/
+
+# Local-only notes for Claude; not shared to the repository.
+CLAUDE.md
