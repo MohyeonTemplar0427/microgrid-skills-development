@@ -164,6 +164,54 @@ def calculate_demand_peak(
     )
 
 
+def calculate_flat_demand_charge(
+    dispatch: pd.DataFrame,
+    demand_charge_rate_per_kw: float,
+    *,
+    previous_peak_kw: float | None = None,
+    import_column: str = "grid_import_kw",
+) -> float:
+    """Bill a single flat per-kW demand charge across every calendar month.
+
+    This is the lightweight counterpart to `calculate_meter_billing`: it
+    reuses the same `assign_billing_periods` / `calculate_demand_peak`
+    primitives, but doesn't require a `TariffDefinition` or meter topology.
+    It's for callers that track cost against a simple external price series
+    rather than a full tariff — e.g. the multi-day experiment pipeline in
+    `signal_pipeline.market_data_integration`, which has no tariff at all.
+
+    `previous_peak_kw` is honoured only for the first represented month, same
+    as `calculate_meter_billing` — later months start from zero.
+    """
+
+    if demand_charge_rate_per_kw < 0:
+        raise BillingError(
+            "demand_charge_rate_per_kw must not be negative."
+        )
+
+    if demand_charge_rate_per_kw == 0:
+        return 0.0
+
+    if "timestamp" not in dispatch.columns:
+        raise BillingError("Dispatch data is missing a timestamp column.")
+
+    timestamps = pd.DatetimeIndex(dispatch["timestamp"])
+    period_labels = assign_billing_periods(timestamps)
+
+    total_cost = 0.0
+    for period_index, period in enumerate(period_labels.unique()):
+        mask = (period_labels == period).to_numpy()
+        import_kw = dispatch.loc[mask, import_column].to_numpy()
+        prior_peak = previous_peak_kw if period_index == 0 else None
+        billed_peak, _, _ = calculate_demand_peak(
+            import_kw,
+            previous_peak_kw=prior_peak,
+        )
+        total_cost += demand_charge_rate_per_kw * billed_peak
+
+    return float(total_cost)
+
+
 def calculate_meter_billing(
     dispatch: pd.DataFrame,
     tariff: TariffDefinition,

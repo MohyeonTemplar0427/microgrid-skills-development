@@ -3,11 +3,16 @@
 from datetime import date
 from decimal import Decimal, InvalidOperation
 import multiprocessing
+from pathlib import Path
 import queue
 import time
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
 
+from ..billing import (
+    PGE_B10_SECONDARY_BUNDLED,
+    supported_tariffs,
+)
 from ..signal_pipeline.price_sources import PRICE_MODES
 from ..signal_pipeline.region_config import (
     get_region_config,
@@ -18,6 +23,7 @@ from .interface_analysis import (
     build_analysis_details,
     build_results_table,
     InterfaceAnalysisResult,
+    RESULT_TABLE_COLUMNS,
     run_integrated_csv_analysis,
     run_live_api_analysis,
 )
@@ -39,6 +45,25 @@ PRICE_MODE_LABELS = {
     "csv": "Price supplied by CSV",
 }
 
+LOAD_PROFILE_LABELS = {
+    "constant": "Constant load",
+    "synthetic": "Synthetic building profile",
+}
+
+LOAD_ARCHETYPE_LABELS = {
+    "residential": "Residential",
+    "multifamily": "Multifamily",
+    "office": "Office",
+    "retail": "Retail",
+    "school": "School",
+    "industrial": "Industrial",
+}
+
+METER_TOPOLOGY_LABELS = {
+    "single_pcc": "Single utility meter at PCC",
+    "master_with_submeters": "Master utility meter with internal submeters",
+}
+
 
 class MicrogridApplication:
     """Own one root window and switch between the study workflow pages."""
@@ -57,6 +82,7 @@ class MicrogridApplication:
         self.pages: dict[str, ttk.Frame] = {}
         self.battery_entries: list[ttk.Entry] = []
         self.analysis_result: InterfaceAnalysisResult | None = None
+        self.analysis_export_parameters: dict[str, object] | None = None
         self.process_context = multiprocessing.get_context("spawn")
         self.analysis_messages = self.process_context.Queue()
         self.analysis_process: multiprocessing.Process | None = None
@@ -93,9 +119,9 @@ class MicrogridApplication:
             "region_id": tk.StringVar(value=first_region),
             "signal_csv_path": tk.StringVar(),
             "start_date": tk.StringVar(value="2026-08-25"),
-            "end_date_inclusive": tk.StringVar(value="2026-08-26"),
+            "end_date_inclusive": tk.StringVar(value="2026-08-31"),
             "timestep_minutes": tk.StringVar(value="15"),
-            "price_mode": tk.StringVar(value="wholesale_market"),
+            "price_mode": tk.StringVar(value="time_of_use"),
             "fixed_retail_price": tk.StringVar(value="0.20"),
             "price_csv_path": tk.StringVar(),
             "market_provider": tk.StringVar(value=region.market_provider),
@@ -110,12 +136,21 @@ class MicrogridApplication:
             "carbon_weight_end": tk.StringVar(value="0.50"),
             "carbon_weight_interval": tk.StringVar(value="0.10"),
             "degradation_cost": tk.StringVar(value="0.03"),
-            "battery_capacity": tk.StringVar(value="20"),
-            "battery_initial_energy": tk.StringVar(value="10"),
-            "battery_max_charge": tk.StringVar(value="5"),
-            "battery_max_discharge": tk.StringVar(value="5"),
-            "pv_capacity": tk.StringVar(value="30"),
-            "load_power": tk.StringVar(value="25"),
+            "battery_capacity": tk.StringVar(value="400"),
+            "battery_initial_energy": tk.StringVar(value="200"),
+            "battery_max_charge": tk.StringVar(value="100"),
+            "battery_max_discharge": tk.StringVar(value="100"),
+            "pv_capacity": tk.StringVar(value="150"),
+            "load_power": tk.StringVar(value="250"),
+            "load_profile_mode": tk.StringVar(value="constant"),
+            "load_archetype": tk.StringVar(value="multifamily"),
+            "load_variability": tk.StringVar(value="0.00"),
+            "tariff_id": tk.StringVar(
+                value=PGE_B10_SECONDARY_BUNDLED.tariff_id
+            ),
+            "meter_topology_mode": tk.StringVar(value="single_pcc"),
+            "submeter_count": tk.StringVar(value="30"),
+            "previous_peak_kw": tk.StringVar(),
         }
 
     def _build_header(self) -> None:
@@ -224,13 +259,60 @@ class MicrogridApplication:
             8,
         )
 
+        self.tariff_combobox = self._add_combobox(
+            source_tab,
+            "Retail tariff",
+            self.values["tariff_id"],
+            tuple(supported_tariffs()),
+            9,
+        )
+        self.meter_topology_combobox = self._add_combobox(
+            source_tab,
+            "Billing meter arrangement",
+            self.values["meter_topology_mode"],
+            tuple(METER_TOPOLOGY_LABELS),
+            10,
+        )
+        self.meter_topology_combobox.bind(
+            "<<ComboboxSelected>>",
+            self._update_price_controls,
+        )
+        self.submeter_count_entry = self._add_entry(
+            source_tab,
+            "Internal submeter count",
+            "submeter_count",
+            11,
+        )
+        self.previous_peak_entry = self._add_entry(
+            source_tab,
+            "Earlier billing-month peak (kW, optional)",
+            "previous_peak_kw",
+            12,
+        )
+        self.tariff_explanation = ttk.Label(
+            source_tab,
+            text=(
+                "Tariff pricing adds TOU energy, customer, and demand charges. "
+                "A blank earlier peak uses only the simulated partial-month peak."
+            ),
+            wraplength=760,
+        )
+        self.tariff_explanation.grid(
+            row=13,
+            column=0,
+            columnspan=3,
+            sticky="w",
+            padx=6,
+            pady=(4, 8),
+        )
+
         self.show_overrides = tk.BooleanVar(value=False)
         ttk.Checkbutton(
             source_tab,
             text="Show advanced provider overrides",
             variable=self.show_overrides,
             command=self._toggle_overrides,
-        ).grid(row=9, column=0, columnspan=3, sticky="w", pady=(14, 5))
+        ).grid(row=14, column=0, columnspan=3, sticky="w", pady=(14, 5))
 
         self.override_frame = ttk.LabelFrame(
             source_tab,
@@ -347,19 +429,68 @@ class MicrogridApplication:
         system_frame.pack(fill="x", pady=12)
         system_frame.columnconfigure(1, weight=1)
         self._add_entry(system_frame, "Rated PV capacity (kW)", "pv_capacity", 0)
-        self._add_entry(system_frame, "Constant or target load (kW)", "load_power", 1)
-
-        ttk.Label(
+        self.load_profile_combobox = self._add_combobox(
             system_frame,
-            text=(
-                "Profile import and scaling rules will be designed after the guided interface "
-                "workflow is complete."
-            ),
+            "Load profile source",
+            self.values["load_profile_mode"],
+            tuple(LOAD_PROFILE_LABELS),
+            1,
+        )
+        self.load_profile_combobox.bind(
+            "<<ComboboxSelected>>",
+            self._update_profile_controls,
+        )
+        self.load_power_label = ttk.Label(
+            system_frame,
+            text="Load power (kW)",
+        )
+        self.load_power_label.grid(
+            row=2,
+            column=0,
+            sticky="w",
+            padx=6,
+            pady=5,
+        )
+        self.load_power_entry = ttk.Entry(
+            system_frame,
+            textvariable=self.values["load_power"],
+        )
+        self.load_power_entry.grid(
+            row=2,
+            column=1,
+            sticky="ew",
+            padx=6,
+            pady=5,
+        )
+        self.load_archetype_combobox = self._add_combobox(
+            system_frame,
+            "Synthetic building type",
+            self.values["load_archetype"],
+            tuple(LOAD_ARCHETYPE_LABELS),
+            3,
+        )
+        self.load_variability_entry = self._add_entry(
+            system_frame,
+            "Synthetic variability (fraction, 0 to 1)",
+            "load_variability",
+            4,
+        )
+
+        self.profile_explanation = ttk.Label(
+            system_frame,
             wraplength=760,
-        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(12, 0))
+        )
+        self.profile_explanation.grid(
+            row=5,
+            column=0,
+            columnspan=3,
+            sticky="w",
+            pady=(12, 0),
+        )
 
         self._navigation(page, previous_page="analysis", next_page="review")
         self._update_battery_controls()
+        self._update_profile_controls()
 
     def _build_review_page(self) -> None:
         page = self._new_page("review")
@@ -539,7 +670,14 @@ class MicrogridApplication:
         self._bind_result_table_scrolling(self.table_canvas)
         self._bind_result_table_scrolling(self.table_frame)
 
-        self._navigation(page, previous_page="review")
+        controls = self._navigation(page, previous_page="review")
+        self.export_results_button = ttk.Button(
+            controls,
+            text="Export Results CSV",
+            command=self._export_results_csv,
+            state="disabled",
+        )
+        self.export_results_button.pack(side="right")
 
     def _navigation(
         self,
@@ -547,7 +685,7 @@ class MicrogridApplication:
         *,
         previous_page: str | None = None,
         next_page: str | None = None,
-    ) -> None:
+    ) -> ttk.Frame:
         controls = ttk.Frame(page)
         controls.pack(fill="x", pady=(16, 0))
         if previous_page:
@@ -562,6 +700,7 @@ class MicrogridApplication:
                 text="Next",
                 command=lambda: self.show_page(next_page),
             ).pack(side="right")
+        return controls
 
     def show_page(self, name: str) -> None:
         """Raise one workflow page while retaining all shared values."""
@@ -638,6 +777,8 @@ class MicrogridApplication:
         self.signal_csv_entry.configure(state=csv_state)
         self.signal_csv_button.configure(state=csv_state)
         self._update_price_controls()
+        if hasattr(self, "load_profile_combobox"):
+            self._update_profile_controls()
 
     def _update_price_controls(self, _event=None) -> None:
         live = self.values["source_mode"].get() == "live_api"
@@ -648,10 +789,28 @@ class MicrogridApplication:
         csv_state = "normal" if live and mode == "csv" else "disabled"
         self.price_csv_entry.configure(state=csv_state)
         self.price_csv_button.configure(state=csv_state)
+        tariff_active = live and mode == "time_of_use"
+        tariff_state = "readonly" if tariff_active else "disabled"
+        self.tariff_combobox.configure(state=tariff_state)
+        self.meter_topology_combobox.configure(state=tariff_state)
+        master_meter = (
+            tariff_active
+            and self.values["meter_topology_mode"].get()
+            == "master_with_submeters"
+        )
+        self.submeter_count_entry.configure(
+            state="normal" if master_meter else "disabled"
+        )
+        self.previous_peak_entry.configure(
+            state="normal" if tariff_active else "disabled"
+        )
+        self.tariff_explanation.configure(
+            foreground="" if tariff_active else "#777777"
+        )
 
     def _toggle_overrides(self) -> None:
         if self.show_overrides.get():
-            self.override_frame.grid(row=10, column=0, columnspan=3, sticky="ew", pady=8)
+            self.override_frame.grid(row=15, column=0, columnspan=3, sticky="ew", pady=8)
         else:
             self.override_frame.grid_forget()
 
@@ -677,6 +836,48 @@ class MicrogridApplication:
                 else "Only the no-battery baseline is selected; battery inputs will be ignored."
             )
         )
+
+    def _update_profile_controls(self, _event=None) -> None:
+        """Enable synthetic-profile details only when live data uses them."""
+
+        live = self.values["source_mode"].get() == "live_api"
+        synthetic = self.values["load_profile_mode"].get() == "synthetic"
+        self.load_profile_combobox.configure(
+            state="readonly" if live else "disabled"
+        )
+        detail_state = "readonly" if live and synthetic else "disabled"
+        self.load_archetype_combobox.configure(state=detail_state)
+        self.load_variability_entry.configure(
+            state="normal" if live and synthetic else "disabled"
+        )
+        self.load_power_label.configure(
+            text=(
+                "Synthetic profile peak load (kW)"
+                if live and synthetic
+                else "Constant load power (kW)"
+            )
+        )
+        self.load_power_entry.configure(
+            state="normal" if live else "disabled"
+        )
+        if not live:
+            explanation = (
+                "Load and PV interval values come from the selected integrated CSV "
+                "columns load_kw and pv_kw; the profile controls above are ignored."
+            )
+        elif synthetic:
+            explanation = (
+                "The program generates one load value per interval from the building "
+                "type, peak load, and variability entered above. To provide exact "
+                "interval measurements instead, choose Integrated CSV on Step 1. "
+                "PV uses a synthetic clear-sky profile."
+            )
+        else:
+            explanation = (
+                "The entered load power is repeated at every interval. PV uses a "
+                "synthetic clear-sky profile."
+            )
+        self.profile_explanation.configure(text=explanation)
 
     def _refresh_review(self) -> None:
         try:
@@ -712,6 +913,15 @@ class MicrogridApplication:
             battery_max_discharge=str(self.values["battery_max_discharge"].get()),
             pv_capacity=str(self.values["pv_capacity"].get()),
             load_power=str(self.values["load_power"].get()),
+            load_profile_mode=str(self.values["load_profile_mode"].get()),
+            load_archetype=str(self.values["load_archetype"].get()),
+            load_variability=str(self.values["load_variability"].get()),
+            tariff_id=str(self.values["tariff_id"].get()),
+            meter_topology_mode=str(
+                self.values["meter_topology_mode"].get()
+            ),
+            submeter_count=str(self.values["submeter_count"].get()),
+            previous_peak_kw=str(self.values["previous_peak_kw"].get()),
         )
         self._render_review_table(rows)
 
@@ -807,6 +1017,34 @@ class MicrogridApplication:
                 load_kw=float(self.values["load_power"].get()),
             )
             degradation_cost = float(self.values["degradation_cost"].get())
+            load_variability = float(self.values["load_variability"].get())
+            if not 0 <= load_variability <= 1:
+                raise ValueError(
+                    "Synthetic load variability must be between 0 and 1."
+                )
+            price_mode = str(self.values["price_mode"].get())
+            previous_peak_text = str(
+                self.values["previous_peak_kw"].get()
+            ).strip()
+            previous_peak_kw = (
+                float(previous_peak_text)
+                if previous_peak_text
+                else None
+            )
+            if previous_peak_kw is not None and previous_peak_kw < 0:
+                raise ValueError(
+                    "Earlier billing-month peak must not be negative."
+                )
+            submeter_count = int(
+                str(self.values["submeter_count"].get())
+            )
+            if (
+                price_mode == "time_of_use"
+                and self.values["meter_topology_mode"].get()
+                == "master_with_submeters"
+                and submeter_count < 1
+            ):
+                raise ValueError("Submeter count must be at least 1.")
         except ValueError as error:
             messagebox.showerror("Invalid analysis setup", str(error), parent=self.window)
             return
@@ -826,6 +1064,8 @@ class MicrogridApplication:
             "Analysis is running. The window will remain responsive."
         )
         self._clear_results_table()
+        self.export_results_button.configure(state="disabled")
+        self.analysis_result = None
         self.run_analysis_button.configure(state="disabled")
         self.analysis_started_at = time.perf_counter()
         self.elapsed_message.set("Elapsed time: 0.0 seconds")
@@ -854,7 +1094,6 @@ class MicrogridApplication:
             }
         else:
             worker_kind = "live_api"
-            price_mode = str(self.values["price_mode"].get())
             worker_arguments = {
                 **common_arguments,
                 "region_id": str(self.values["region_id"].get()),
@@ -870,7 +1109,22 @@ class MicrogridApplication:
                     else None
                 ),
                 "price_csv_path": str(self.values["price_csv_path"].get()) or None,
+                "load_profile_mode": str(
+                    self.values["load_profile_mode"].get()
+                ),
+                "load_archetype": str(
+                    self.values["load_archetype"].get()
+                ),
+                "load_variability_fraction": load_variability,
+                "tariff_id": str(self.values["tariff_id"].get()),
+                "meter_topology_mode": str(
+                    self.values["meter_topology_mode"].get()
+                ),
+                "submeter_count": submeter_count,
+                "previous_peak_kw": previous_peak_kw,
             }
+
+        self.analysis_export_parameters = self._current_export_parameters()
 
         self.analysis_process = self.process_context.Process(
             target=_run_csv_worker_process,
@@ -989,9 +1243,172 @@ class MicrogridApplication:
             f"Analysis complete: {len(payload.comparison)} scenario result(s)."
         )
         self._set_analysis_message(
-            "Scroll horizontally to inspect every reported metric."
+            (
+                " ".join(payload.warnings)
+                if payload.warnings
+                else "Scroll horizontally to inspect every reported metric."
+            )
         )
         self._render_results_table(payload.comparison)
+        self.export_results_button.configure(state="normal")
+
+    def _export_results_csv(self) -> None:
+        """Save displayed scenario results with their input configuration."""
+
+        if (
+            self.analysis_result is None
+            or self.analysis_export_parameters is None
+        ):
+            messagebox.showerror(
+                "No analysis results",
+                "Run an analysis before exporting results.",
+                parent=self.window,
+            )
+            return
+
+        default_name = (
+            "microgrid_analysis_"
+            f"{self.values['start_date'].get()}_to_"
+            f"{self.values['end_date_inclusive'].get()}.csv"
+        )
+        selected_path = filedialog.asksaveasfilename(
+            parent=self.window,
+            title="Export microgrid analysis results",
+            defaultextension=".csv",
+            initialfile=default_name,
+            filetypes=[("CSV files", "*.csv")],
+        )
+
+        if not selected_path:
+            return
+
+        try:
+            export_table = build_results_export_table(
+                self.analysis_result.comparison,
+                self.analysis_export_parameters,
+                warnings=self.analysis_result.warnings,
+            )
+            output_path = Path(selected_path)
+            export_table.to_csv(output_path, index=False)
+        except (OSError, ValueError) as error:
+            messagebox.showerror(
+                "Export failed",
+                str(error),
+                parent=self.window,
+            )
+            return
+
+        messagebox.showinfo(
+            "Export complete",
+            f"Results saved to:\n{output_path}",
+            parent=self.window,
+        )
+
+    def _current_export_parameters(self) -> dict[str, object]:
+        """Collect the GUI inputs that produced the current result table."""
+
+        source_mode = str(self.values["source_mode"].get())
+        price_mode = str(self.values["price_mode"].get())
+        topology_mode = str(self.values["meter_topology_mode"].get())
+        live = source_mode == "live_api"
+        tariff_active = live and price_mode == "time_of_use"
+        synthetic_load = (
+            live
+            and self.values["load_profile_mode"].get() == "synthetic"
+        )
+
+        return {
+            "input_data_source": source_mode,
+            "input_signal_csv_path": (
+                "" if live else str(self.values["signal_csv_path"].get())
+            ),
+            "input_region_id": (
+                str(self.values["region_id"].get()) if live else ""
+            ),
+            "input_market_provider": (
+                str(self.values["market_provider"].get()) if live else ""
+            ),
+            "input_market_location": (
+                str(self.values["market_location"].get()) if live else ""
+            ),
+            "input_carbon_provider": (
+                str(self.values["carbon_provider"].get()) if live else ""
+            ),
+            "input_carbon_zone": (
+                str(self.values["carbon_zone"].get()) if live else ""
+            ),
+            "input_timezone": str(self.values["timezone"].get()),
+            "input_start_date": str(self.values["start_date"].get()),
+            "input_end_date_inclusive": str(
+                self.values["end_date_inclusive"].get()
+            ),
+            "input_timestep_minutes": int(
+                str(self.values["timestep_minutes"].get())
+            ),
+            "input_price_mode": price_mode if live else "integrated_csv",
+            "input_tariff_id": (
+                str(self.values["tariff_id"].get())
+                if tariff_active
+                else ""
+            ),
+            "input_meter_topology": (
+                topology_mode if tariff_active else ""
+            ),
+            "input_submeter_count": (
+                int(str(self.values["submeter_count"].get()))
+                if tariff_active
+                and topology_mode == "master_with_submeters"
+                else ""
+            ),
+            "input_previous_peak_kw": (
+                str(self.values["previous_peak_kw"].get()).strip()
+                if tariff_active
+                else ""
+            ),
+            "input_selected_strategies": ",".join(
+                selected_strategies(self.strategy_values)
+            ),
+            "input_carbon_weight_mode": str(
+                self.values["carbon_weight_mode"].get()
+            ),
+            "input_carbon_weights": _format_current_carbon_weights(
+                self.values
+            ),
+            "input_degradation_cost_per_kwh": float(
+                self.values["degradation_cost"].get()
+            ),
+            "input_battery_capacity_kwh": float(
+                self.values["battery_capacity"].get()
+            ),
+            "input_battery_initial_energy_kwh": float(
+                self.values["battery_initial_energy"].get()
+            ),
+            "input_battery_max_charge_kw": float(
+                self.values["battery_max_charge"].get()
+            ),
+            "input_battery_max_discharge_kw": float(
+                self.values["battery_max_discharge"].get()
+            ),
+            "input_pv_capacity_kw": float(self.values["pv_capacity"].get()),
+            "input_load_profile_mode": (
+                str(self.values["load_profile_mode"].get())
+                if live
+                else "integrated_csv"
+            ),
+            "input_load_power_or_peak_kw": (
+                float(self.values["load_power"].get()) if live else ""
+            ),
+            "input_load_archetype": (
+                str(self.values["load_archetype"].get())
+                if synthetic_load
+                else ""
+            ),
+            "input_load_variability_fraction": (
+                float(self.values["load_variability"].get())
+                if synthetic_load
+                else ""
+            ),
+        }
 
     def _release_finished_analysis_process(self) -> None:
         """Join and close a worker after it has returned its final message."""
@@ -1240,6 +1657,13 @@ def build_review_rows(
     battery_max_discharge: str,
     pv_capacity: str,
     load_power: str,
+    load_profile_mode: str,
+    load_archetype: str,
+    load_variability: str,
+    tariff_id: str,
+    meter_topology_mode: str,
+    submeter_count: str,
+    previous_peak_kw: str,
 ) -> tuple[tuple[str, str, str], ...]:
     """Build the rows shown in the Step 3 review table."""
 
@@ -1251,6 +1675,28 @@ def build_review_rows(
         else "Included in integrated CSV"
     )
     battery_value = "Active" if battery_active else "Ignored"
+    tariff_active = source_mode == "live_api" and price_mode == "time_of_use"
+    if tariff_active:
+        topology_label = METER_TOPOLOGY_LABELS[meter_topology_mode]
+        if meter_topology_mode == "master_with_submeters":
+            topology_label += f" ({submeter_count} submeters)"
+        prior_peak_label = previous_peak_kw.strip() or "Unknown"
+    else:
+        topology_label = "Not used"
+        prior_peak_label = "Not used"
+    if source_mode == "live_api":
+        load_profile_label = LOAD_PROFILE_LABELS[load_profile_mode]
+        load_detail = (
+            f"{LOAD_ARCHETYPE_LABELS[load_archetype]}, peak {load_power} kW, "
+            f"variability {load_variability}"
+            if load_profile_mode == "synthetic"
+            else f"{load_power} kW at every interval"
+        )
+        pv_profile_label = "Synthetic clear-sky profile"
+    else:
+        load_profile_label = "Integrated CSV load_kw"
+        load_detail = "Read from the selected integrated signal file"
+        pv_profile_label = "Integrated CSV pv_kw"
 
     return (
         ("Analysis", "Data source", source_label),
@@ -1259,6 +1705,17 @@ def build_review_rows(
         ("Analysis", "End date (inclusive)", end_date_inclusive),
         ("Analysis", "Time interval", f"{timestep_minutes} minutes"),
         ("Analysis", "Electricity price", price_label),
+        (
+            "Billing",
+            "Retail tariff",
+            tariff_id if tariff_active else "Not used",
+        ),
+        ("Billing", "Meter arrangement", topology_label),
+        (
+            "Billing",
+            "Earlier monthly peak",
+            f"{prior_peak_label} kW" if tariff_active else prior_peak_label,
+        ),
         ("Strategies", "Selected scenarios", ", ".join(strategies)),
         ("Strategies", "Combined carbon weights", ", ".join(carbon_weights)),
         (
@@ -1288,7 +1745,9 @@ def build_review_rows(
             f"{battery_max_discharge} kW" if battery_active else "Ignored",
         ),
         ("Microgrid", "PV capacity", f"{pv_capacity} kW"),
-        ("Microgrid", "Load assumption", f"{load_power} kW"),
+        ("Profiles", "PV source", pv_profile_label),
+        ("Profiles", "Load source", load_profile_label),
+        ("Profiles", "Load details", load_detail),
     )
 
 
@@ -1351,6 +1810,42 @@ def parse_carbon_weights(
     if len(set(values)) != len(values):
         raise ValueError("Carbon weights must not contain duplicates.")
     return values
+
+
+def _format_current_carbon_weights(values: dict[str, tk.Variable]) -> str:
+    """Return the currently configured carbon weights as CSV-safe text."""
+
+    parsed = parse_carbon_weights(
+        str(values["carbon_weight_mode"].get()),
+        single=str(values["carbon_weight_single"].get()),
+        explicit_list=str(values["carbon_weight_list"].get()),
+        range_start=str(values["carbon_weight_start"].get()),
+        range_end=str(values["carbon_weight_end"].get()),
+        range_interval=str(values["carbon_weight_interval"].get()),
+    )
+    return ",".join(str(weight) for weight in parsed)
+
+
+def build_results_export_table(
+    comparison,
+    parameters: dict[str, object],
+    *,
+    warnings: tuple[str, ...] = (),
+):
+    """Build a self-describing scenario table for CSV export."""
+
+    result_columns = [
+        column
+        for column, _label in RESULT_TABLE_COLUMNS
+        if column in comparison.columns
+    ]
+    export_table = comparison[result_columns].copy()
+
+    for column, value in parameters.items():
+        export_table[column] = value
+
+    export_table["analysis_warnings"] = " | ".join(warnings)
+    return export_table
 
 
 def create_guided_application_window() -> tk.Tk:

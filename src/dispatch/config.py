@@ -20,6 +20,9 @@ class ExperimentConfig:
     degradation_cost_per_kWh: float = 0.03
     timestep_hours: float = 0.25
 
+    demand_charge_rate_per_kw: float = 0.0
+    previous_peak_kw: float | None = None
+
     # The region supplies the market provider, price node, carbon zone and
     # timezone. The fields below stay None unless a caller overrides one.
     region: str = "caiso_np15"
@@ -65,6 +68,12 @@ class ExperimentConfig:
 
         if self.degradation_cost_per_kWh < 0:
             raise ValueError("Degradation cost per kWh must be greater than 0.")
+
+        if self.demand_charge_rate_per_kw < 0:
+            raise ValueError("Demand charge rate must be greater than 0.")
+
+        if self.previous_peak_kw is not None and self.previous_peak_kw < 0:
+            raise ValueError("Previous peak kW must be greater than 0.")
 
         if self.sleep_seconds < 0:
             raise ValueError("Sleep seconds must be greater than 0.")

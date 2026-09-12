@@ -23,6 +23,12 @@ def create_two_interval_price_spread() -> pd.DataFrame:
 
     return pd.DataFrame(
         {
+            "timestamp": pd.date_range(
+                "2026-08-25",
+                periods=2,
+                freq="15min",
+                tz="America/Los_Angeles",
+            ),
             "load_kw": [5.0, 5.0],
             "pv_kw": [0.0, 0.0],
             "price_per_kWh": [0.10, 0.20],
@@ -69,3 +75,23 @@ def test_cost_optimization_rejects_negative_degradation_cost():
             BATTERY_PARAMETERS,
             degradation_cost_per_kWh=-0.01,
         )
+
+
+def test_cost_optimization_includes_monthly_demand_charge():
+    data = create_two_interval_price_spread()
+
+    energy_only = run_cost_optimization(
+        data.copy(),
+        BATTERY_PARAMETERS,
+    )
+    demand_aware = run_cost_optimization(
+        data.copy(),
+        BATTERY_PARAMETERS,
+        demand_charge_rate_per_kw=20.50,
+    )
+
+    assert energy_only["grid_import_kw"].max() > 5.0
+    assert demand_aware["grid_import_kw"].max() == pytest.approx(
+        5.0,
+        abs=1e-4,
+    )

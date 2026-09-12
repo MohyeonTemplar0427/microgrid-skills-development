@@ -11,6 +11,19 @@ import pandas as pd
 from dotenv import find_dotenv, load_dotenv
 
 from ..analysis.carbon_weights import build_scenario_name
+from ..billing import (
+    calculate_billing,
+    get_tariff,
+    master_with_submeters_topology,
+    single_pcc_topology,
+)
+from ..profiles import (
+    BuildingArchetype,
+    ConstantLoad,
+    LoadScaling,
+    SyntheticLoad,
+    SyntheticPV,
+)
 from ..signal_pipeline.horizon import AnalysisHorizon, build_horizon
 from ..signal_pipeline.price_sources import (
     CSVPrice,
@@ -20,6 +33,7 @@ from ..signal_pipeline.price_sources import (
 from ..signal_pipeline.signal_loader import load_signal_data
 from ..signal_pipeline.source_config import resolve_live_api_config
 from ..signal_pipeline.region_config import get_region_config
+from ..timeseries import build_interval_index_from_days
 from .model_specifications import MicrogridSpecification
 from .time_series_analysis import (
     TimeSeriesAnalysisResult,
@@ -39,6 +53,7 @@ class InterfaceAnalysisResult:
 
     comparison: pd.DataFrame
     runs_by_carbon_weight: dict[float, TimeSeriesAnalysisResult]
+    warnings: tuple[str, ...] = ()
 
 
 def build_analysis_details(
@@ -158,6 +173,13 @@ def run_live_api_analysis(
     selected_scenarios: tuple[str, ...],
     carbon_weights: tuple[float, ...],
     degradation_cost_per_kWh: float,
+    load_profile_mode: str = "constant",
+    load_archetype: str = "multifamily",
+    load_variability_fraction: float = 0.0,
+    tariff_id: str | None = None,
+    meter_topology_mode: str = "single_pcc",
+    submeter_count: int = 1,
+    previous_peak_kw: float | None = None,
     progress_callback: Callable[[str], None] | None = None,
 ) -> InterfaceAnalysisResult:
     """Retrieve live regional signals and run the selected study scenarios."""
@@ -179,16 +201,20 @@ def run_live_api_analysis(
         config.timezone,
         timestep_minutes,
     )
-    site_profile = create_temporary_site_profile(
+    site_profile = create_site_profile(
         horizon,
         load_kw=specification.load_kw,
         pv_capacity_kw=specification.pv_capacity_kw,
+        load_profile_mode=load_profile_mode,
+        load_archetype=load_archetype,
+        load_variability_fraction=load_variability_fraction,
     )
     price_source = _build_live_price_source(
         price_mode,
         horizon,
         fixed_retail_price=fixed_retail_price,
         price_csv_path=price_csv_path,
+        tariff_id=tariff_id,
     )
 
     load_dotenv(find_dotenv(), override=False)
@@ -222,6 +248,10 @@ def run_live_api_analysis(
         selected_scenarios=selected_scenarios,
         carbon_weights=weights_to_run,
         degradation_cost_per_kWh=degradation_cost_per_kWh,
+        tariff_id=(tariff_id if price_mode == "time_of_use" else None),
+        meter_topology_mode=meter_topology_mode,
+        submeter_count=submeter_count,
+        previous_peak_kw=previous_peak_kw,
         progress_callback=progress_callback,
     )
 
@@ -232,7 +262,7 @@ def create_temporary_site_profile(
     load_kw: float,
     pv_capacity_kw: float,
 ) -> pd.DataFrame:
-    """Create constant load and a simplified daylight PV curve."""
+    """Create the legacy constant-load, full-rating daylight profile."""
 
     if load_kw < 0:
         raise ValueError("Temporary profile load must not be negative.")
@@ -262,12 +292,61 @@ def create_temporary_site_profile(
     )
 
 
+def create_site_profile(
+    horizon: AnalysisHorizon,
+    *,
+    load_kw: float,
+    pv_capacity_kw: float,
+    load_profile_mode: str,
+    load_archetype: str,
+    load_variability_fraction: float,
+) -> pd.DataFrame:
+    """Build live-analysis load and available-PV inputs from GUI choices."""
+
+    interval_index = build_interval_index_from_days(
+        horizon.start.strftime("%Y-%m-%d"),
+        horizon.number_of_days,
+        horizon.timezone,
+        horizon.timestep_minutes,
+    )
+
+    if load_profile_mode == "constant":
+        load_source = ConstantLoad(load_kw)
+    elif load_profile_mode == "synthetic":
+        load_source = SyntheticLoad(
+            archetype=BuildingArchetype(load_archetype),
+            scaling=LoadScaling.PEAK_KW,
+            peak_kw=load_kw,
+            variability_fraction=load_variability_fraction,
+        )
+    else:
+        raise ValueError(
+            f"Unsupported load profile mode: {load_profile_mode}."
+        )
+
+    pv_source = SyntheticPV(
+        rated_pv_capacity_kw=pv_capacity_kw,
+    )
+
+    load_values = load_source.build_load_kw(interval_index)
+    pv_values = pv_source.build_pv_available_kw(interval_index)
+
+    return pd.DataFrame(
+        {
+            "timestamp": horizon.index,
+            "load_kw": load_values.to_numpy(dtype=float),
+            "pv_kw": pv_values.to_numpy(dtype=float),
+        }
+    )
+
+
 def _build_live_price_source(
     price_mode: str,
     horizon: AnalysisHorizon,
     *,
     fixed_retail_price: float | None,
     price_csv_path: str | Path | None,
+    tariff_id: str | None = None,
 ) -> PriceSource | None:
     """Build an optional price override for a live regional analysis."""
 
@@ -301,10 +380,26 @@ def _build_live_price_source(
         return CSVPrice(price_data)
 
     if price_mode == "time_of_use":
-        raise ValueError(
-            "The time-of-use tariff editor is not connected yet. "
-            "Choose wholesale, fixed retail, or CSV pricing for this test."
+        if not tariff_id:
+            raise ValueError("Select a time-of-use tariff.")
+
+        tariff = get_tariff(tariff_id, horizon.start.date())
+        final_date = horizon.index[-1].date()
+        if not tariff.is_effective_on(final_date):
+            raise ValueError(
+                f"Tariff {tariff_id} does not cover the complete analysis "
+                f"through {final_date}."
+            )
+
+        tariff_prices = pd.DataFrame(
+            {
+                "timestamp": horizon.index,
+                "price_per_kWh": tariff.energy_rates(
+                    horizon.index
+                ).to_numpy(dtype=float),
+            }
         )
+        return CSVPrice(tariff_prices)
 
     raise ValueError(f"Unsupported electricity price mode: {price_mode}.")
 
@@ -320,6 +415,10 @@ def _run_selected_signal_analysis(
     selected_scenarios: tuple[str, ...],
     carbon_weights: tuple[float, ...],
     degradation_cost_per_kWh: float,
+    tariff_id: str | None = None,
+    meter_topology_mode: str = "single_pcc",
+    submeter_count: int = 1,
+    previous_peak_kw: float | None = None,
     progress_callback: Callable[[str], None] | None,
 ) -> InterfaceAnalysisResult:
     """Run backend scenarios and prepare the comparison selected by the GUI."""
@@ -354,6 +453,12 @@ def _run_selected_signal_analysis(
             start_time=start_date,
             end_time=end_date,
             scenario_names=scenarios_for_run,
+            demand_charge_rate_per_kw=(
+                _maximum_demand_rate(tariff_id)
+                if tariff_id is not None
+                else 0.0
+            ),
+            previous_peak_kw=previous_peak_kw,
             progress_callback=report_stage,
         )
 
@@ -390,6 +495,19 @@ def _run_selected_signal_analysis(
         ignore_index=True,
     )
 
+    billing_warnings: list[str] = []
+    if tariff_id is not None:
+        comparison, billing_warnings = _apply_tariff_billing(
+            comparison,
+            runs,
+            first_weight=first_weight,
+            tariff_id=tariff_id,
+            meter_topology_mode=meter_topology_mode,
+            submeter_count=submeter_count,
+            previous_peak_kw=previous_peak_kw,
+            timestep_hours=timestep_minutes / 60.0,
+        )
+
     if "carbon_weight" not in comparison.columns:
         comparison["carbon_weight"] = first_weight
     else:
@@ -422,6 +540,87 @@ def _run_selected_signal_analysis(
     return InterfaceAnalysisResult(
         comparison=comparison,
         runs_by_carbon_weight=runs,
+        warnings=tuple(dict.fromkeys(billing_warnings)),
+    )
+
+
+def _apply_tariff_billing(
+    comparison: pd.DataFrame,
+    runs: dict[float, TimeSeriesAnalysisResult],
+    *,
+    first_weight: float,
+    tariff_id: str,
+    meter_topology_mode: str,
+    submeter_count: int,
+    previous_peak_kw: float | None,
+    timestep_hours: float,
+) -> tuple[pd.DataFrame, list[str]]:
+    """Add complete tariff bill components to every displayed scenario."""
+
+    tariff = get_tariff(tariff_id)
+    if meter_topology_mode == "single_pcc":
+        topology = single_pcc_topology(tariff_id)
+    elif meter_topology_mode == "master_with_submeters":
+        topology = master_with_submeters_topology(
+            tariff_id,
+            submeter_count,
+        )
+    else:
+        raise ValueError(
+            f"Unsupported GUI meter topology: {meter_topology_mode}."
+        )
+
+    billed = comparison.copy()
+    warnings: list[str] = []
+
+    for row_index, row in billed.iterrows():
+        display_name = str(row["scenario"])
+        if display_name.startswith("combined_optimal_"):
+            run_weight = float(row["carbon_weight"])
+            dispatch_name = "combined_optimal"
+        else:
+            run_weight = first_weight
+            dispatch_name = display_name
+
+        dispatch = runs[run_weight].dispatch_scenarios[dispatch_name]
+        billing = calculate_billing(
+            dispatch,
+            topology,
+            {tariff_id: tariff},
+            timestep_hours=timestep_hours,
+            previous_peak_kw=previous_peak_kw,
+            battery_degradation_cost=float(row["degradation_cost"]),
+        )
+
+        billed.loc[row_index, "customer_charge"] = billing.customer_charge
+        billed.loc[row_index, "energy_cost"] = billing.import_energy_charge
+        billed.loc[row_index, "demand_charge"] = billing.demand_charge
+        billed.loc[row_index, "export_credit"] = billing.export_credit
+        billed.loc[row_index, "total_utility_charge"] = (
+            billing.total_utility_charge
+        )
+        billed.loc[row_index, "total_explicit_cost"] = (
+            billing.total_explicit_operating_cost
+        )
+        billed.loc[row_index, "billed_peak_kw"] = max(
+            (period.billed_peak_kw for period in billing.periods),
+            default=0.0,
+        )
+        warnings.extend(billing.warnings)
+        for period in billing.periods:
+            warnings.extend(period.warnings)
+
+    return billed, warnings
+
+
+def _maximum_demand_rate(tariff_id: str) -> float:
+    """Return the tariff's combined maximum-demand rate in $/kW."""
+
+    tariff = get_tariff(tariff_id)
+    return sum(
+        component.rate_per_kW
+        for component in tariff.demand_charges
+        if component.basis.value == "maximum"
     )
 
 
@@ -455,14 +654,18 @@ def format_comparison_for_display(comparison: pd.DataFrame) -> str:
 
 RESULT_TABLE_COLUMNS = (
     ("scenario", "Scenario"),
+    ("total_explicit_cost", "Total cost ($)"),
     ("energy_cost", "Energy cost ($)"),
+    ("demand_charge", "Demand charge ($)"),
+    ("customer_charge", "Customer charge ($)"),
+    ("export_credit", "Export credit ($)"),
     ("degradation_cost", "Degradation ($)"),
     ("average_daily_efc", "Avg daily EFC"),
-    ("total_explicit_cost", "Total cost ($)"),
     ("emissions_kgCO2", "Emissions (kgCO2)"),
     ("carbon_adjusted_operating_cost", "Carbon-adjusted cost ($)"),
     ("pcc_grid_import_energy_kWh", "Grid import (kWh)"),
     ("peak_grid_import_kw", "Peak import (kW)"),
+    ("billed_peak_kw", "Billed peak (kW)"),
     ("minimum_voltage_pu", "Min voltage (pu)"),
     ("maximum_line_loading_percent", "Max line (%)"),
     (

@@ -8,6 +8,7 @@ from ..dispatch import multi_day_analysis as mda
 from pathlib import Path
 from dotenv import load_dotenv, find_dotenv
 from ..dispatch.battery import Battery
+from ..billing import calculate_flat_demand_charge
 from ..dispatch.config import ExperimentConfig, to_optimizer_parameters
 from ..dispatch.results import ExperimentResult
 from .experiment_data import ExperimentData
@@ -400,6 +401,8 @@ def run_multi_day_experiment(
             battery_parameters,
             carbon_weight = config.carbon_weight,
             degradation_cost_per_kWh = config.degradation_cost_per_kWh,
+            demand_charge_rate_per_kw = config.demand_charge_rate_per_kw,
+            previous_peak_kw = config.previous_peak_kw,
         )
         for scenario_name, scenario_data
         in scenarios.items()
@@ -486,6 +489,14 @@ def run_multi_day_experiment(
             * config.degradation_cost_per_kWh
         )
 
+        demand_charge_cost = (
+            calculate_flat_demand_charge(
+                optimized_data,
+                config.demand_charge_rate_per_kw,
+                previous_peak_kw=config.previous_peak_kw,
+            )
+        )
+
         scenario_metrics[scenario_name] = {
             "cost": float(evaluated_cost),
             "emissions_kgCO2": float(
@@ -497,9 +508,13 @@ def run_multi_day_experiment(
             "degradation_cost": float(
                 degradation_cost
             ),
+            "demand_charge_cost": float(
+                demand_charge_cost
+            ),
             "total_operating_cost": float(
                 evaluated_cost
                 + degradation_cost
+                + demand_charge_cost
             ),
         }
 
@@ -520,6 +535,14 @@ def run_multi_day_experiment(
             no_battery_dispatch,
             price_data,
             timestep_hours=config.timestep_hours
+        )
+    )
+
+    no_battery_demand_charge_cost = (
+        calculate_flat_demand_charge(
+            no_battery_dispatch,
+            config.demand_charge_rate_per_kw,
+            previous_peak_kw=config.previous_peak_kw,
         )
     )
 
@@ -569,8 +592,12 @@ def run_multi_day_experiment(
         ),
         "battery_throughput_kWh": 0.0,
         "degradation_cost": 0.0,
+        "demand_charge_cost": float(
+            no_battery_demand_charge_cost
+        ),
         "total_operating_cost": float(
             no_battery_cost
+            + no_battery_demand_charge_cost
         ),
     }
 
@@ -597,9 +624,18 @@ def run_multi_day_experiment(
         * config.degradation_cost_per_kWh
     )
 
+    real_market_demand_charge_cost = (
+        calculate_flat_demand_charge(
+            real_market_optimized,
+            config.demand_charge_rate_per_kw,
+            previous_peak_kw=config.previous_peak_kw,
+        )
+    )
+
     real_market_total_operating_cost = (
         real_market_cost
         + real_market_degradation_cost
+        + real_market_demand_charge_cost
     )
 
     #9. Analyze real-market dispatch
@@ -665,7 +701,7 @@ def run_multi_day_experiment(
     )
 
     operating_cost_savings = (
-        no_battery_cost
+        (no_battery_cost + no_battery_demand_charge_cost)
         - real_market_total_operating_cost
     )
 
@@ -748,6 +784,14 @@ def run_multi_day_experiment(
         ),
 
         daily_summary = daily_summary,
+
+        real_market_demand_charge_cost = float(
+            real_market_demand_charge_cost
+        ),
+
+        no_battery_demand_charge_cost = float(
+            no_battery_demand_charge_cost
+        ),
 
         scenario_metrics=scenario_metrics,
         opendss_handoff=opendss_handoff,

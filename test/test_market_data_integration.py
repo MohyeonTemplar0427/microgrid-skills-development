@@ -857,7 +857,48 @@ def test_create_scenario_comparison_table_uses_common_baseline():
         "operating_cost_savings",
     ] == pytest.approx(2.0)
 
-    assert result.loc[  
+    assert result.loc[
         "combined_real",
         "operating_cost_savings",
     ] == pytest.approx(10.0)
+
+
+def test_scenario_comparison_reflects_demand_charge_in_operating_savings():
+    # Same shape run_multi_day_experiment now produces once a demand
+    # charge rate is configured: "demand_charge_cost" is its own column,
+    # already folded into "total_operating_cost".
+    scenario_metrics = {
+        "no_battery": {
+            "cost": 100.0,
+            "emissions_kgCO2": 200.0,
+            "degradation_cost": 0.0,
+            "demand_charge_cost": 50.0,
+            "total_operating_cost": 150.0,
+        },
+        "combined_real": {
+            "cost": 85.0,
+            "emissions_kgCO2": 160.0,
+            "degradation_cost": 0.0,
+            "demand_charge_cost": 20.0,
+            "total_operating_cost": 105.0,
+        },
+    }
+
+    result = create_scenario_comparison_table(
+        scenario_metrics
+    ).set_index("scenario")
+
+    # Raw energy cost only differs by 15 (100 -> 85), but the battery also
+    # shaved the monthly peak, cutting the demand charge from 50 to 20. The
+    # true operating savings (45) are much larger than the energy-only
+    # savings would suggest — this is exactly the number that used to be
+    # invisible before demand charges were wired into the reporting.
+    assert result.loc[
+        "combined_real",
+        "cost_savings",
+    ] == pytest.approx(15.0)
+
+    assert result.loc[
+        "combined_real",
+        "operating_cost_savings",
+    ] == pytest.approx(45.0)

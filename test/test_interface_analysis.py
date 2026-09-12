@@ -8,9 +8,12 @@ import pytest
 import src.simulation.interface_analysis as interface_analysis
 from src.dispatch.battery import Battery
 from src.simulation.interface_analysis import (
+    _apply_tariff_billing,
+    _build_live_price_source,
     build_analysis_details,
     build_results_table,
     create_temporary_site_profile,
+    create_site_profile,
     format_comparison_for_display,
     run_integrated_csv_analysis,
 )
@@ -145,6 +148,100 @@ def test_create_temporary_site_profile_uses_configured_ratings():
     assert profile["pv_kw"].max() == 30
 
 
+def test_create_site_profile_builds_synthetic_load_and_pv():
+    horizon = build_horizon(
+        "2026-08-25",
+        2,
+        "America/Los_Angeles",
+        15,
+    )
+
+    profile = create_site_profile(
+        horizon,
+        load_kw=25,
+        pv_capacity_kw=30,
+        load_profile_mode="synthetic",
+        load_archetype="office",
+        load_variability_fraction=0.0,
+    )
+
+    assert len(profile) == 192
+    assert profile["load_kw"].max() == pytest.approx(25.0)
+    assert profile["load_kw"].nunique() > 1
+    assert profile["pv_kw"].max() == pytest.approx(25.5)
+    assert profile["pv_kw"].min() == 0
+
+
+def test_pge_tariff_builds_summer_tou_prices():
+    horizon = build_horizon(
+        "2026-08-25",
+        1,
+        "America/Los_Angeles",
+        15,
+    )
+
+    source = _build_live_price_source(
+        "time_of_use",
+        horizon,
+        fixed_retail_price=None,
+        price_csv_path=None,
+        tariff_id="pge_b10_secondary_bundled_2026_03_01",
+    )
+    prices = source.build_prices(horizon)
+
+    assert prices.loc[
+        prices["timestamp"].dt.hour == 16,
+        "price_per_kWh",
+    ].eq(0.33947).all()
+    assert prices.loc[
+        prices["timestamp"].dt.hour == 10,
+        "price_per_kWh",
+    ].eq(0.24522).all()
+
+
+def test_tariff_billing_adds_customer_and_demand_charges():
+    timestamps = pd.date_range(
+        "2026-08-25",
+        periods=4,
+        freq="15min",
+        tz="America/Los_Angeles",
+    )
+    dispatch = pd.DataFrame(
+        {
+            "timestamp": timestamps,
+            "grid_import_kw": [250.0] * 4,
+            "grid_export_kw": [0.0] * 4,
+        }
+    )
+    comparison = pd.DataFrame(
+        {
+            "scenario": ["no_battery"],
+            "carbon_weight": [0.2],
+            "degradation_cost": [0.0],
+            "total_explicit_cost": [0.0],
+        }
+    )
+    run = SimpleNamespace(
+        dispatch_scenarios={"no_battery": dispatch}
+    )
+
+    billed, warnings = _apply_tariff_billing(
+        comparison,
+        {0.2: run},
+        first_weight=0.2,
+        tariff_id="pge_b10_secondary_bundled_2026_03_01",
+        meter_topology_mode="single_pcc",
+        submeter_count=1,
+        previous_peak_kw=None,
+        timestep_hours=0.25,
+    )
+
+    assert billed.loc[0, "customer_charge"] == pytest.approx(11.36882)
+    assert billed.loc[0, "demand_charge"] == pytest.approx(5125.0)
+    assert billed.loc[0, "billed_peak_kw"] == pytest.approx(250.0)
+    assert any("PARTIAL BILLING PERIOD" in warning for warning in warnings)
+
+
 def test_build_results_table_uses_readable_headings():
     comparison = _comparison().copy()
     comparison["pcc_grid_import_energy_kWh"] = 100.12345
@@ -152,10 +249,22 @@ def test_build_results_table_uses_readable_headings():
     comparison["minimum_voltage_pu"] = 0.998123
     comparison["maximum_line_loading_percent"] = 4.8
     comparison["maximum_transformer_loading_percent"] = 4.2
+    comparison["demand_charge"] = 20.0
+    comparison["customer_charge"] = 5.0
+    comparison["export_credit"] = 0.0
 
     headings, rows = build_results_table(comparison)
 
     assert headings[0] == "Scenario"
+    assert headings[1:7] == (
+        "Total cost ($)",
+        "Energy cost ($)",
+        "Demand charge ($)",
+        "Customer charge ($)",
+        "Export credit ($)",
+        "Degradation ($)",
+    )
+    assert "Utility bill ($)" not in headings
     assert "Degradation ($)" in headings
     assert "Avg daily EFC" in headings
     assert "Feasible intervals" not in headings

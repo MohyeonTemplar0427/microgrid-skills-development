@@ -148,6 +148,8 @@ def run_microgrid_timeseries_analysis(
     start_time: str | pd.Timestamp | None = None,
     end_time: str | pd.Timestamp | None = None,
     scenario_names: tuple[str, ...] | None = None,
+    demand_charge_rate_per_kw: float = 0.0,
+    previous_peak_kw: float | None = None,
     progress_callback: Callable[[str], None] | None = None,
 ) -> TimeSeriesAnalysisResult:
     """Run dispatch, power flow, and performance analysis."""
@@ -220,6 +222,8 @@ def run_microgrid_timeseries_analysis(
             ),
             time_step_minutes=timestep_minutes,
             expected_timezone=expected_timezone,
+            demand_charge_rate_per_kw=demand_charge_rate_per_kw,
+            previous_peak_kw=previous_peak_kw,
             scenario_names=scenario_names,
         )
     )

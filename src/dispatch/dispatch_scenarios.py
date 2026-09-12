@@ -40,6 +40,8 @@ def create_optimized_dispatch_scenarios(
         carbon_weight: float,
         degradation_cost_per_kWh: float,
         timestep_minutes: int = 15,
+        demand_charge_rate_per_kw: float = 0.0,
+        previous_peak_kw: float | None = None,
         scenario_names: tuple[str, ...] | None = None,
 ) -> dict[str, pd.DataFrame]:
     """Create rule-based and optimized dispatch schedules."""
@@ -107,6 +109,8 @@ def create_optimized_dispatch_scenarios(
             battery_parameters,
             degradation_cost_per_kWh=degradation_cost_per_kWh,
             timestep_hours=timestep_hours,
+            demand_charge_rate_per_kw=demand_charge_rate_per_kw,
+            previous_peak_kw=previous_peak_kw,
         ),
         "carbon_optimal": lambda: sda.run_carbon_optimization(
             data.copy(),
@@ -119,6 +123,8 @@ def create_optimized_dispatch_scenarios(
             carbon_weight=carbon_weight,
             degradation_cost_per_kWh=degradation_cost_per_kWh,
             timestep_hours=timestep_hours,
+            demand_charge_rate_per_kw=demand_charge_rate_per_kw,
+            previous_peak_kw=previous_peak_kw,
         ),
     }
 
@@ -137,6 +143,8 @@ def create_required_dispatch_scenarios(
         degradation_cost_per_kWh: float,
         time_step_minutes: int = 15,
         expected_timezone: str = "America/Los_Angeles",
+        demand_charge_rate_per_kw: float = 0.0,
+        previous_peak_kw: float | None = None,
         scenario_names: tuple[str, ...] | None = None,
 ) -> dict[str, pd.DataFrame]:
     """Create only the requested OpenDSS-ready dispatch schedules."""
@@ -166,6 +174,8 @@ def create_required_dispatch_scenarios(
             carbon_weight=carbon_weight,
             degradation_cost_per_kWh=(degradation_cost_per_kWh),
             timestep_minutes=time_step_minutes,
+            demand_charge_rate_per_kw=demand_charge_rate_per_kw,
+            previous_peak_kw=previous_peak_kw,
             scenario_names=tuple(
                 name
                 for name in requested_names

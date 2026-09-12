@@ -164,6 +164,38 @@ def test_optimizer_receives_configured_timestep(monkeypatch):
     assert received["timestep_hours"] == pytest.approx(1.0)
 
 
+def test_cost_optimizer_receives_demand_charge_inputs(monkeypatch):
+    input_data = sda.create_sample_dataframe(date="2026-08-25")
+    received = {}
+
+    def fake_cost(
+        data,
+        battery_parameters,
+        *,
+        degradation_cost_per_kWh,
+        timestep_hours,
+        demand_charge_rate_per_kw,
+        previous_peak_kw,
+    ):
+        received["rate"] = demand_charge_rate_per_kw
+        received["previous_peak"] = previous_peak_kw
+        return data
+
+    monkeypatch.setattr(sda, "run_cost_optimization", fake_cost)
+
+    create_optimized_dispatch_scenarios(
+        input_data,
+        sda.battery_parameters,
+        carbon_weight=0.20,
+        degradation_cost_per_kWh=0.03,
+        demand_charge_rate_per_kw=20.50,
+        previous_peak_kw=275.0,
+        scenario_names=("cost_optimal",),
+    )
+
+    assert received == {"rate": 20.50, "previous_peak": 275.0}
+
+
 def test_save_required_dispatch_scenarios(
     tmp_path,
 ):

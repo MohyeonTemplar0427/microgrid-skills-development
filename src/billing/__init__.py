@@ -8,6 +8,7 @@ from .charges import (
     assign_billing_periods,
     calculate_billing,
     calculate_demand_peak,
+    calculate_flat_demand_charge,
     calculate_meter_billing,
 )
 from .meter_topology import (
@@ -69,6 +70,7 @@ __all__ = [
     "assign_billing_periods",
     "calculate_billing",
     "calculate_demand_peak",
+    "calculate_flat_demand_charge",
     "calculate_meter_billing",
     "default_commercial_tariff",
     "get_tariff",

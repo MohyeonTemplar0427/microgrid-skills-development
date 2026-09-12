@@ -30,6 +30,9 @@ class ExperimentResult:
 
     daily_summary: pd.DataFrame
 
+    real_market_demand_charge_cost: float = 0.0
+    no_battery_demand_charge_cost: float = 0.0
+
     scenario_metrics: dict[
         str,
         dict[str, float],

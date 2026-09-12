@@ -392,6 +392,8 @@ def run_cost_optimization(
         *,
         degradation_cost_per_kWh: float = 0.0,
         timestep_hours: float = 0.25,
+        demand_charge_rate_per_kw: float = 0.0,
+        previous_peak_kw: float | None = None,
 ) -> pd.DataFrame:
 
     number_of_steps = len(data)
@@ -403,6 +405,12 @@ def run_cost_optimization(
         raise ValueError(
             "Degradation cost must not be negative."
         )
+
+    if demand_charge_rate_per_kw < 0:
+        raise ValueError("Demand charge rate must not be negative.")
+
+    if previous_peak_kw is not None and previous_peak_kw < 0:
+        raise ValueError("Previous billing peak must not be negative.")
 
     initial_soc_kWh = battery_parameters["initial_soc_kWh"]
     min_soc_kWh = battery_parameters["min_soc_kWh"]
@@ -495,9 +503,17 @@ def run_cost_optimization(
         * battery_throughput_kWh
     )
 
+    demand_charge_cost = _build_monthly_demand_charge_cost(
+        grid_import_kw,
+        data,
+        demand_charge_rate_per_kw=demand_charge_rate_per_kw,
+        previous_peak_kw=previous_peak_kw,
+    )
+
     objective = cp.Minimize(
         grid_import_cost
         + battery_degradation_cost
+        + demand_charge_cost
     )
 
     problem = cp.Problem(
@@ -726,12 +742,20 @@ def run_combined_optimization(
         carbon_weight: float,
         degradation_cost_per_kWh: float,
         timestep_hours: float = 0.25,
+        demand_charge_rate_per_kw: float = 0.0,
+        previous_peak_kw: float | None = None,
 )->pd.DataFrame:
 
     number_of_steps = len(data)
 
     if timestep_hours <= 0:
         raise ValueError("Timestep hours must be positive.")
+
+    if demand_charge_rate_per_kw < 0:
+        raise ValueError("Demand charge rate must not be negative.")
+
+    if previous_peak_kw is not None and previous_peak_kw < 0:
+        raise ValueError("Previous billing peak must not be negative.")
 
     initial_soc_kWh = battery_parameters["initial_soc_kWh"]
     min_soc_kWh = battery_parameters["min_soc_kWh"]
@@ -837,8 +861,16 @@ def run_combined_optimization(
         * battery_throughput_kWh
     )
 
+    demand_charge_cost = _build_monthly_demand_charge_cost(
+        grid_import_kw,
+        data,
+        demand_charge_rate_per_kw=demand_charge_rate_per_kw,
+        previous_peak_kw=previous_peak_kw,
+    )
+
     objective = cp.Minimize(
         grid_import_cost
+        + demand_charge_cost
         + carbon_weight
         * grid_import_emission_kgCO2
         + battery_degradation_cost
@@ -879,6 +911,41 @@ def run_combined_optimization(
     )
 
     return data
+
+
+def _build_monthly_demand_charge_cost(
+    grid_import_kw: cp.Variable,
+    data: pd.DataFrame,
+    *,
+    demand_charge_rate_per_kw: float,
+    previous_peak_kw: float | None,
+):
+    """Build one maximum-demand charge term per represented calendar month."""
+
+    if demand_charge_rate_per_kw == 0:
+        return 0.0
+
+    if "timestamp" not in data.columns:
+        raise ValueError(
+            "Demand-charge optimization requires timestamp data."
+        )
+
+    timestamps = pd.DatetimeIndex(data["timestamp"])
+    period_labels = timestamps.strftime("%Y-%m")
+    demand_cost = 0.0
+
+    for period_index, period_label in enumerate(pd.unique(period_labels)):
+        positions = [
+            index
+            for index, label in enumerate(period_labels)
+            if label == period_label
+        ]
+        period_peak = cp.max(grid_import_kw[positions])
+        if period_index == 0 and previous_peak_kw is not None:
+            period_peak = cp.maximum(period_peak, previous_peak_kw)
+        demand_cost += demand_charge_rate_per_kw * period_peak
+
+    return demand_cost
 
 
 #Plotting Results----------------------------------------------------------------------- 

@@ -19,6 +19,7 @@ from src.billing import (
     allocate_shared_generation,
     calculate_billing,
     calculate_demand_peak,
+    calculate_flat_demand_charge,
     calculate_meter_billing,
     get_tariff,
     individual_meters_topology,
@@ -318,6 +319,78 @@ def test_previous_peak_can_be_supplied_by_billing_period():
 
     assert periods[0].billed_peak_kw == pytest.approx(80.0)
     assert periods[1].billed_peak_kw == pytest.approx(90.0)
+
+
+def test_flat_demand_charge_bills_peak_once_per_month():
+    _, dispatch = make_dispatch("2026-03-01", "2026-03-31", 40.0)
+
+    cost = calculate_flat_demand_charge(
+        dispatch,
+        demand_charge_rate_per_kw=10.0,
+    )
+
+    assert cost == pytest.approx(400.0)
+    # Emphatically not summed across every interval.
+    assert cost != pytest.approx(
+        10.0 * dispatch["grid_import_kw"].sum()
+    )
+
+
+def test_flat_demand_charge_zero_rate_short_circuits():
+    _, dispatch = make_dispatch("2026-03-01", "2026-03-31", 40.0)
+
+    assert calculate_flat_demand_charge(
+        dispatch,
+        demand_charge_rate_per_kw=0.0,
+    ) == 0.0
+
+
+def test_flat_demand_charge_zero_rate_skips_timestamp_check():
+    # A zero rate should short-circuit before ever looking for a
+    # timestamp column, so this succeeds even on data that couldn't
+    # otherwise be billed.
+    dispatch = pd.DataFrame({"grid_import_kw": [10.0, 20.0]})
+
+    assert calculate_flat_demand_charge(
+        dispatch,
+        demand_charge_rate_per_kw=0.0,
+    ) == 0.0
+
+
+def test_flat_demand_charge_rejects_negative_rate():
+    _, dispatch = make_dispatch("2026-03-01", "2026-03-31", 40.0)
+
+    with pytest.raises(BillingError):
+        calculate_flat_demand_charge(
+            dispatch,
+            demand_charge_rate_per_kw=-5.0,
+        )
+
+
+def test_flat_demand_charge_requires_timestamp_column():
+    dispatch = pd.DataFrame({"grid_import_kw": [10.0, 20.0]})
+
+    with pytest.raises(BillingError):
+        calculate_flat_demand_charge(
+            dispatch,
+            demand_charge_rate_per_kw=10.0,
+        )
+
+
+def test_flat_demand_charge_honours_previous_peak_first_month_only():
+    _, dispatch = make_dispatch("2026-03-31", "2026-04-02", 40.0)
+
+    cost = calculate_flat_demand_charge(
+        dispatch,
+        demand_charge_rate_per_kw=10.0,
+        previous_peak_kw=90.0,
+    )
+
+    # March is billed at the known prior peak (90, since it exceeds the
+    # simulated 40); April gets no prior peak, so it's billed at its own
+    # simulated peak (40) — previous_peak_kw only ever covers the first
+    # represented period.
+    assert cost == pytest.approx(10.0 * 90.0 + 10.0 * 40.0)
 
 
 def test_billing_rejects_tariff_outside_effective_window():
