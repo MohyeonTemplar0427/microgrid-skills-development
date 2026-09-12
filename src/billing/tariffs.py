@@ -62,6 +62,13 @@ class TOUPeriod:
     ``start_hour`` is inclusive and ``end_hour`` exclusive, in local
     wall-clock hours. A block may wrap past midnight. ``months`` restricts the
     block to specific calendar months (1-12); empty means all months.
+
+    ``demand_basis`` marks which demand-charge basis this block's *hours*
+    also define, if any -- e.g. the same 4-9pm window priced for energy is
+    usually the window a peak-period demand charge is measured over. Leave it
+    ``None`` on off-peak/super-off-peak blocks, which only ever count toward
+    a ``MAXIMUM``-basis charge (already computed over the whole period, with
+    no hour filtering needed).
     """
 
     name: str
@@ -71,6 +78,7 @@ class TOUPeriod:
     season: Season | None = None
     months: frozenset[int] = frozenset()
     priority: int = 0
+    demand_basis: DemandChargeBasis | None = None
 
     def __post_init__(self) -> None:
         if self.rate_per_kWh < 0:
@@ -274,6 +282,23 @@ class TariffDefinition:
             names = names.mask(covered & names.isna(), period.name)
 
         return names
+
+    def demand_basis_for(self, timestamps: pd.DatetimeIndex) -> pd.Series:
+        """Which demand-charge basis applies to each interval, if any.
+
+        Derived from whichever TOU period is active there (same priority
+        resolution as :meth:`energy_rates`), via that period's own
+        ``demand_basis``. Intervals covered by a period with no
+        ``demand_basis`` (typically off-peak/super-off-peak) come back
+        ``None`` -- they still count toward a ``MAXIMUM``-basis charge, just
+        not toward a period-scoped one.
+        """
+
+        names = self.period_names(timestamps)
+        basis_by_name = {
+            period.name: period.demand_basis for period in self.tou_periods
+        }
+        return names.map(basis_by_name)
 
     def customer_charge_for(self, billing_days: float) -> float:
         """Customer charge for one meter over ``billing_days`` days."""

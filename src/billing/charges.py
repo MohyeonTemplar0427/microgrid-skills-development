@@ -2,10 +2,16 @@
 
 Pure functions over an interval table plus a tariff and a meter topology.
 
-**Demand charges are not summed across intervals.** A demand charge bills the
-single highest 15-minute average import in each billing period, once. Summing
+**Demand charges are not summed across intervals.** Each demand-charge
+component bills a single peak import per billing period, once -- summing
 per-interval demand would overstate cost by roughly the number of intervals,
-which is the most common way this calculation goes wrong.
+which is the most common way this calculation goes wrong. A tariff can still
+have *several* demand components on the same bill (e.g. B-19's maximum-demand
+charge plus a peak-period one): those are legitimately summed together, each
+against its own peak over its own scope (the whole period for `MAXIMUM`;
+just the tariff's on-peak/part-peak hours for `PEAK_PERIOD`/
+`PART_PEAK_PERIOD`) -- it's summing across intervals, within one component,
+that's wrong.
 
 Billing periods are calendar months. A horizon spanning several months gets a
 separate peak, and a separate customer charge, for each.
@@ -27,7 +33,14 @@ class BillingError(ValueError):
 
 @dataclass
 class BillingPeriodResult:
-    """Charges for one meter over one billing period."""
+    """Charges for one meter over one billing period.
+
+    ``demand_charge_by_component`` gives each demand-charge component's own
+    dollar contribution, by name; ``demand_charge`` is their sum. Exposed
+    separately so a tariff with several components (e.g. a maximum-demand
+    charge plus a peak-period one) can be inspected/tested component by
+    component, not just as one total.
+    """
 
     meter_id: str
     tariff_id: str
@@ -44,6 +57,7 @@ class BillingPeriodResult:
     is_partial_period: bool = False
     previous_peak_was_known: bool = True
     warnings: tuple[str, ...] = field(default_factory=tuple)
+    demand_charge_by_component: dict[str, float] = field(default_factory=dict)
 
     @property
     def total_utility_charge(self) -> float:
@@ -239,6 +253,8 @@ def calculate_meter_billing(
         )
 
     rates = tariff.energy_rates(timestamps).to_numpy(dtype=float)
+    seasons = tariff.season_for(timestamps).to_numpy()
+    demand_basis_per_interval = tariff.demand_basis_for(timestamps).to_numpy()
     import_kw = dispatch[import_column].to_numpy(dtype=float)
 
     export_kw = (
@@ -272,19 +288,6 @@ def calculate_meter_billing(
             + ". Select the tariff version covering the analysis date."
         )
 
-    unsupported_demand_components = [
-        component.name
-        for component in tariff.demand_charges
-        if component.basis != DemandChargeBasis.MAXIMUM
-    ]
-
-    if unsupported_demand_components:
-        raise BillingError(
-            "Demand-charge bases other than maximum demand are not yet "
-            "implemented. Unsupported components: "
-            f"{unsupported_demand_components}."
-        )
-
     results = []
 
     for period_index, label in enumerate(periods.unique()):
@@ -310,11 +313,40 @@ def calculate_meter_billing(
             previous_peak_kw=prior_peak_for_period,
         )
 
-        demand_charge = sum(
-            component.rate_per_kW * billed_peak
-            for component in tariff.demand_charges
-            if component.basis == DemandChargeBasis.MAXIMUM
-        )
+        period_demand_basis = demand_basis_per_interval[mask]
+        period_seasons = seasons[mask]
+
+        demand_charge = 0.0
+        demand_charge_by_component: dict[str, float] = {}
+
+        for component in tariff.demand_charges:
+            if component.basis == DemandChargeBasis.MAXIMUM:
+                # The period's overall peak, already resolved above
+                # (previous_peak_kw applies here, same as always).
+                component_peak = billed_peak
+            else:
+                # PEAK_PERIOD / PART_PEAK_PERIOD: only the intervals whose
+                # active TOU block is tagged with this basis count -- e.g.
+                # a peak-period demand charge is measured only over the
+                # hours the tariff calls "peak", not the whole month.
+                # `previous_peak_kw` is not carried into these narrower
+                # peaks: the tariff only documents a single "previous
+                # billing peak" concept (used for MAXIMUM), so a brand-new
+                # customer's first partial period may understate a
+                # period-scoped charge the same way `is_partial` already
+                # warns about for the overall one.
+                component_scope = period_demand_basis == component.basis
+                if component.season is not None:
+                    component_scope = component_scope & (
+                        period_seasons == component.season.value
+                    )
+                component_peak, _, _ = calculate_demand_peak(
+                    period_import_kw[component_scope]
+                )
+
+            component_cost = component.rate_per_kW * component_peak
+            demand_charge += component_cost
+            demand_charge_by_component[component.name] = component_cost
 
         period_timestamps = timestamps[mask]
         billing_days = float(
@@ -359,6 +391,7 @@ def calculate_meter_billing(
                 is_partial_period=is_partial,
                 previous_peak_was_known=previous_known,
                 warnings=tuple(warnings),
+                demand_charge_by_component=demand_charge_by_component,
             )
         )
 

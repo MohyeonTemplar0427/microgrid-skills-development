@@ -1,7 +1,7 @@
 """Tariff, meter-topology and billing tests.
 
-B-10 rates are checked against the values published in the tariff effective
-1 March 2026.
+B-10 and B-19 rates are checked against the values published in the tariff
+sheets effective 1 March 2026.
 """
 
 from datetime import date
@@ -12,9 +12,11 @@ import pytest
 
 from src.billing import (
     BillingError,
+    DemandChargeBasis,
     MeterTopologyError,
     MeterTopologyMode,
     PGE_B10_SECONDARY_BUNDLED,
+    PGE_B19_SECONDARY_MANDATORY_BUNDLED,
     TariffError,
     allocate_shared_generation,
     calculate_billing,
@@ -29,13 +31,14 @@ from src.billing import (
     supported_tariffs,
 )
 from src.billing.meter_topology import ConnectionLocation, UtilityMeter
-from src.billing.tariffs import ServiceVoltageClass
+from src.billing.tariffs import Season, ServiceVoltageClass
 from src.timeseries import build_interval_index
 
 PACIFIC = "America/Los_Angeles"
 
 B10 = PGE_B10_SECONDARY_BUNDLED
-TARIFFS = {B10.tariff_id: B10}
+B19 = PGE_B19_SECONDARY_MANDATORY_BUNDLED
+TARIFFS = {B10.tariff_id: B10, B19.tariff_id: B19}
 
 
 def rate_at(timestamp: str) -> float:
@@ -119,10 +122,98 @@ def test_unknown_tariff_is_rejected():
     assert B10.tariff_id in supported_tariffs()
 
 
-def test_b19_is_not_registered():
-    """B-19's multiple demand components must not be approximated by B-10."""
+def test_b19_metadata():
+    assert B19.service_voltage_class == ServiceVoltageClass.SECONDARY
+    assert B19.version == "2026-03-01"
+    assert B19.effective_start == date(2026, 3, 1)
+    assert "ELEC_SCHEDS_B-19" in B19.source_url
+    assert B19.daily_customer_charge == pytest.approx(58.62824)
+    assert len(B19.demand_charges) == 4
+    assert B19.tariff_id in supported_tariffs()
 
-    assert not any("b19" in name for name in supported_tariffs())
+
+def _b19_dispatch(day: str):
+    index = build_interval_index(day, day, PACIFIC)
+    dispatch = pd.DataFrame(
+        {"timestamp": index.index, "grid_import_kw": 50.0}
+    )
+    hours = dispatch["timestamp"].dt.hour
+    dispatch.loc[hours.between(16, 20), "grid_import_kw"] = 200.0
+    # 2-4pm: on-peak in neither season, but part-peak in summer only.
+    dispatch.loc[hours.between(14, 15), "grid_import_kw"] = 120.0
+    return index, dispatch
+
+
+def test_b19_summer_bills_all_three_demand_components():
+    _, dispatch = _b19_dispatch("2026-07-15")
+
+    periods = calculate_meter_billing(
+        dispatch,
+        B19,
+        meter_id="pcc",
+        timestep_hours=0.25,
+        expect_full_periods=False,
+    )
+    by_component = periods[0].demand_charge_by_component
+
+    assert by_component["maximum_demand"] == pytest.approx(37.37 * 200.0)
+    assert by_component["peak_period_demand_summer"] == pytest.approx(
+        46.16 * 200.0
+    )
+    assert by_component["part_peak_period_demand_summer"] == pytest.approx(
+        10.52 * 120.0
+    )
+    # Winter's peak-period component doesn't apply in July.
+    assert by_component["peak_period_demand_winter"] == pytest.approx(0.0)
+
+    assert periods[0].demand_charge == pytest.approx(
+        sum(by_component.values())
+    )
+
+
+def test_b19_winter_has_no_part_peak_demand_component():
+    # Same 2-4pm spike as the summer case, but 2-4pm isn't part-peak in
+    # winter (Section 6 only defines a part-peak window for summer) -- so
+    # it should count toward nothing but the maximum-demand component.
+    _, dispatch = _b19_dispatch("2026-11-15")
+
+    periods = calculate_meter_billing(
+        dispatch,
+        B19,
+        meter_id="pcc",
+        timestep_hours=0.25,
+        expect_full_periods=False,
+    )
+    by_component = periods[0].demand_charge_by_component
+
+    assert by_component["maximum_demand"] == pytest.approx(37.37 * 200.0)
+    assert by_component["peak_period_demand_winter"] == pytest.approx(
+        2.31 * 200.0
+    )
+    assert by_component["peak_period_demand_summer"] == pytest.approx(0.0)
+    assert by_component["part_peak_period_demand_summer"] == pytest.approx(
+        0.0
+    )
+
+
+def test_demand_basis_for_tags_intervals_by_active_tou_period():
+    index = pd.DatetimeIndex(
+        [
+            pd.Timestamp("2026-07-15 18:00", tz=PACIFIC),  # summer peak
+            pd.Timestamp("2026-07-15 15:00", tz=PACIFIC),  # summer part-peak
+            pd.Timestamp("2026-07-15 03:00", tz=PACIFIC),  # summer off-peak
+            pd.Timestamp("2026-11-15 18:00", tz=PACIFIC),  # winter peak
+        ]
+    )
+
+    basis = B19.demand_basis_for(index)
+
+    assert list(basis) == [
+        DemandChargeBasis.PEAK_PERIOD,
+        DemandChargeBasis.PART_PEAK_PERIOD,
+        None,
+        DemandChargeBasis.PEAK_PERIOD,
+    ]
 
 
 def test_rates_follow_local_wall_clock_across_dst():

@@ -23,8 +23,8 @@ from .meter_topology import (
     single_pcc_topology,
 )
 from .pge_tariffs import (
-    B19_NOT_IMPLEMENTED_NOTE,
     PGE_B10_SECONDARY_BUNDLED,
+    PGE_B19_SECONDARY_MANDATORY_BUNDLED,
     default_commercial_tariff,
 )
 from .tariffs import (
@@ -45,7 +45,6 @@ from .tariffs import (
 )
 
 __all__ = [
-    "B19_NOT_IMPLEMENTED_NOTE",
     "BillingError",
     "BillingPeriodResult",
     "BillingResult",
@@ -58,6 +57,7 @@ __all__ = [
     "MeterTopologyError",
     "MeterTopologyMode",
     "PGE_B10_SECONDARY_BUNDLED",
+    "PGE_B19_SECONDARY_MANDATORY_BUNDLED",
     "Season",
     "SeasonDefinition",
     "ServiceType",
